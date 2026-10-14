@@ -1,0 +1,81 @@
+import React, { useEffect, useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+
+import LearnScreen from './src/screens/LearnScreen';
+import GoalsScreen from './src/screens/GoalsScreen';
+import KnowledgeGraphScreen from './src/screens/KnowledgeGraphScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import API, { setAuthToken } from './src/api/config';
+
+const Tab = createBottomTabNavigator();
+
+const App = () => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [userToken, setUserToken] = useState(null);
+
+  useEffect(() => {
+    login();
+  }, []);
+
+  const login = async () => {
+    try {
+      const response = await API.post('/auth/signin', {
+        username: 'testuser',
+        password: 'password123'
+      });
+      const { token } = response.data;
+      setAuthToken(token);
+      setUserToken(token);
+    } catch (error) {
+      console.error('Login error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return null; 
+  }
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName;
+              
+              if (route.name === 'Учить') {
+                iconName = 'menu-book';
+              } else if (route.name === 'Цели') {
+                iconName = 'track-changes';
+              } else if (route.name === 'Граф знаний') {
+                iconName = 'device-hub';
+              } else if (route.name === 'Настройки') {
+                iconName = 'settings';
+              }
+              
+              return <Icon name={iconName} size={size} color={color} />;
+            },
+            tabBarActiveTintColor: '#4CAF50',
+            tabBarInactiveTintColor: 'gray',
+            headerStyle: {
+              backgroundColor: '#4CAF50',
+            },
+            headerTintColor: '#fff',
+          })}
+        >
+          <Tab.Screen name="Учить" component={LearnScreen} />
+          <Tab.Screen name="Цели" component={GoalsScreen} />
+          <Tab.Screen name="Граф знаний" component={KnowledgeGraphScreen} />
+          <Tab.Screen name="Настройки" component={SettingsScreen} />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+};
+
+export default App;

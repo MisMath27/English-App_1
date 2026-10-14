@@ -1,0 +1,28 @@
+# Минимальная версия iOS
+platform :ios, '13.4'
+
+# Отключаем проверку Xcode для работы в WSL
+ENV['XCODEBUILD_AVAILABLE'] = '0'
+
+target 'EnglishApp' do
+  # Добавляем необходимые pod'ы напрямую
+  pod 'BVLinearGradient', :path => '../node_modules/react-native-linear-gradient'
+  pod 'RNSVG', :path => '../node_modules/react-native-svg'
+  pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
+  pod 'RNScreens', :path => '../node_modules/react-native-screens'
+  pod 'react-native-safe-area-context', :path => '../node_modules/react-native-safe-area-context'
+
+  # Добавляем React и его зависимости
+  pod 'React', :path => '../node_modules/react-native'
+  pod 'React-Core', :path => '../node_modules/react-native'
+  pod 'React-hermes', :path => '../node_modules/react-native'
+  pod 'hermes-engine', :path => '../node_modules/react-native/sdks/hermes'
+
+  #target 'EnglishAppTests' do
+ #   inherit! :complete
+#  end
+
+  post_install do |installer|
+    puts "✅ Pods installed for Android compatibility"
+  end
+end

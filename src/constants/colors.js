@@ -1,0 +1,56 @@
+export const lightColors = {
+  background: '#f5f5f5',
+  surface: '#ffffff',
+  text: '#333333',
+  textSecondary: '#666666',
+  textTertiary: '#999999',
+  border: '#e0e0e0',
+  card: '#ffffff',
+  accent: '#4CAF50',
+  accentLight: '#E8F5E9',
+  error: '#F44336',
+  warning: '#FF9800',
+  info: '#2196F3',
+  success: '#4CAF50',
+  graphBackground: '#ffffff',
+  graphLine: '#dddddd',
+  graphText: '#666666',
+};
+
+export const darkColors = {
+  background: '#121212',
+  surface: '#1e1e1e',
+  text: '#ffffff',
+  textSecondary: '#b0b0b0',
+  textTertiary: '#808080',
+  border: '#333333',
+  card: '#2d2d2d',
+  accent: '#4CAF50',
+  accentLight: '#2d3e2d',
+  error: '#cf6679',
+  warning: '#ffb74d',
+  info: '#64b5f6',
+  success: '#4CAF50',
+  graphBackground: '#1a1a1a',
+  graphLine: '#404040',
+  graphText: '#b0b0b0',
+};
+
+export const COLORS = {
+  primary: '#2ECC71',
+  primaryDark: '#1ABC9C',
+  primaryLight: '#58D68D',
+
+  secondary: '#3498DB',
+  accent: '#9B59B6',
+  warning: '#F39C12',
+  error: '#E74C3C',
+
+  background: '#0A0A1A',
+  backgroundSecondary: '#1A1A2E',
+  text: '#FFFFFF',
+  textSecondary: '#B0B0C0',
+  textMuted: '#666680',
+  cardBorder: 'rgba(255,255,255,0.06)',
+  cardBg: 'rgba(255,255,255,0.03)',
+};
