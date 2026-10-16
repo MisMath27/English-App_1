@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,20 +13,22 @@ import {
   Easing,
   Share,
   Linking,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
-import {
-  loadSettings,
-  saveSettings,
-  loadWords,
-} from '../utils/progressStorage';
+import { useTranslation } from '../context/LanguageContext';
+import { loadSettings, saveSettings, loadWords } from '../utils/progressStorage';
+
+const SETTINGS_KEY = '@english_app:userSettings';
 
 const SettingsScreen = ({ navigation }) => {
-  const { isDarkMode, toggleTheme, colors } = useTheme();
+  const { isDarkMode, toggleTheme, colors, setFontSize, fontSizeMultiplier } = useTheme();
+  const { t, setLanguage } = useTranslation();
 
   const [settings, setSettings] = useState({
     notifications: true,
@@ -64,24 +66,19 @@ const SettingsScreen = ({ navigation }) => {
     loadAllData();
   }, []);
 
-  // ⭐ ИСПРАВЛЕНО: используем progressStorage + сохраняем дефолты при первом запуске
   const loadAllData = async () => {
     try {
-      // 1. Загружаем настройки через progressStorage
       const saved = await loadSettings();
-
-      // Проверяем, есть ли уже сохранённый объект userSettings
-      const rawSaved = await AsyncStorage.getItem('@english_app:userSettings');
+      const rawSaved = await AsyncStorage.getItem(SETTINGS_KEY);
       let merged;
 
       if (rawSaved) {
-        // Полный объект есть — берём все поля
         const parsed = JSON.parse(rawSaved);
         merged = {
-          notifications: parsed.notifications !== undefined ? parsed.notifications : true,
-          soundEffects: parsed.soundEffects !== undefined ? parsed.soundEffects : true,
-          autoPlay: parsed.autoPlay || false,
-          dailyReminder: parsed.dailyReminder !== undefined ? parsed.dailyReminder : true,
+          notifications: parsed.notifications ?? true,
+          soundEffects: parsed.soundEffects ?? true,
+          autoPlay: parsed.autoPlay ?? false,
+          dailyReminder: parsed.dailyReminder ?? true,
           reminderTime: parsed.reminderTime || '20:00',
           wordsPerDay: parsed.wordsPerDay || 30,
           reviewCount: parsed.reviewCount || 15,
@@ -89,7 +86,6 @@ const SettingsScreen = ({ navigation }) => {
           fontSize: parsed.fontSize || 'medium',
         };
       } else {
-        // Первый запуск — сохраняем дефолты в AsyncStorage!
         merged = {
           notifications: true,
           soundEffects: true,
@@ -101,12 +97,11 @@ const SettingsScreen = ({ navigation }) => {
           language: 'ru',
           fontSize: 'medium',
         };
-        await AsyncStorage.setItem('@english_app:userSettings', JSON.stringify(merged));
+        await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
       }
 
       setSettings(merged);
 
-      // 2. Загружаем данные пользователя
       const savedUser = await AsyncStorage.getItem('userData');
       if (savedUser) {
         try {
@@ -116,26 +111,23 @@ const SettingsScreen = ({ navigation }) => {
         }
       }
 
-      // 3. Определяем уровень по количеству выученных слов
       const words = (await loadWords()) || [];
-      const learned = words.filter(w => w.isLearned).length;
+      const learned = words.filter((w) => w.isLearned).length;
       const level =
         learned >= 200 ? 'C1' :
         learned >= 150 ? 'B2' :
         learned >= 100 ? 'B1' :
         learned >= 50 ? 'A2' : 'A1';
 
-      setUser(prev => ({ ...prev, level }));
+      setUser((prev) => ({ ...prev, level }));
     } catch (error) {
       console.log('Ошибка загрузки:', error);
     }
   };
 
-  // ⭐ Сохранение — используем ключ @english_app:userSettings
   const persistSettings = async (newSettings) => {
     try {
-      await AsyncStorage.setItem('@english_app:userSettings', JSON.stringify(newSettings));
-      // Также синхронизируем wordsPerDay / reviewCount в progressStorage
+      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
       await saveSettings({
         wordsPerDay: newSettings.wordsPerDay,
         reviewCount: newSettings.reviewCount,
@@ -153,137 +145,193 @@ const SettingsScreen = ({ navigation }) => {
     }
   };
 
-  const handleToggle = (key) => {
-    const newSettings = { ...settings, [key]: !settings[key] };
+  const handleToggle = useCallback((key) => {
+    setSettings((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      persistSettings(next);
+      return next;
+    });
+  }, []);
+
+  const handleChangeValue = useCallback((key, value) => {
+    setSettings((prev) => {
+      const next = { ...prev, [key]: value };
+      persistSettings(next);
+      return next;
+    });
+    if (key === 'fontSize') setFontSize(value);
+    if (key === 'language') setLanguage(value);
+  }, [setFontSize, setLanguage]);
+
+  const handleNotificationsToggle = async () => {
+    const newValue = !settings.notifications;
+    if (newValue) {
+      try {
+        const perm = await notifee.requestPermission();
+        if (perm.authorizationStatus !== AuthorizationStatus.AUTHORIZED) {
+          Alert.alert(t('settings_notifications'), t('settings_notifications_desc'));
+          return;
+        }
+        await notifee.createChannel({ id: 'default', name: 'Default' });
+      } catch (e) {
+        Alert.alert('Error', e.message);
+        return;
+      }
+    }
+    const newSettings = { ...settings, notifications: newValue };
     setSettings(newSettings);
     persistSettings(newSettings);
   };
 
-  const handleChangeValue = (key, value) => {
-    const newSettings = { ...settings, [key]: value };
+  const sendTestNotification = async () => {
+    try {
+      await notifee.displayNotification({
+        title: t('settings_notifications'),
+        body: t('settings_notifications_desc'),
+        android: { channelId: 'default', smallIcon: 'ic_launcher', pressAction: { id: 'default' } },
+      });
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  const handleSoundToggle = () => {
+    const newSettings = { ...settings, soundEffects: !settings.soundEffects };
     setSettings(newSettings);
     persistSettings(newSettings);
   };
 
-  const openModal = (type, currentValue) => {
+//  const playTestSound = () => {
+//    const sound = new Sound('whoosh.mp3', Sound.MAIN_BUNDLE, (err) => {
+//      if (err) {
+//        Alert.alert(t('settings_sounds'), t('settings_test_sound'));
+//        return;
+//      }
+//      sound.play((success) => {
+//        if (!success) Alert.alert('Error', 'Sound failed');
+//        sound.release();
+//      });
+//    });
+//  };
+
+  const handleAutoPlayToggle = () => {
+    const newSettings = { ...settings, autoPlay: !settings.autoPlay };
+    setSettings(newSettings);
+    persistSettings(newSettings);
+  };
+
+  const testAutoPlay = async () => {
+    const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    Alert.alert(t('settings_autoplay'), parsed.autoPlay ? 'On' : 'Off');
+  };
+
+  const openModal = useCallback((type, currentValue) => {
     setModalType(type);
-    setTempValue(currentValue.toString());
+    setTempValue(String(currentValue));
     setModalVisible(true);
-  };
+  }, []);
 
-  const handleModalSave = () => {
+  const closeModal = useCallback(() => setModalVisible(false), []);
+
+  const handleModalSave = useCallback(() => {
     let newValue;
     if (modalType === 'reminderTime') {
-      // Проверка формата ЧЧ:ММ
       const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
       if (!timeRegex.test(tempValue)) {
-        Alert.alert('Неверный формат', 'Введите время в формате ЧЧ:ММ, например 20:00');
+        Alert.alert(t('settings_reminder_time'), 'ЧЧ:ММ');
         return;
       }
       newValue = tempValue;
-    } else if (modalType === 'wordsPerDay') {
+    } else if (modalType === 'wordsPerDay' || modalType === 'reviewCount') {
       const parsed = parseInt(tempValue, 10);
       if (isNaN(parsed) || parsed < 1 || parsed > 500) {
-        Alert.alert('Неверное значение', 'Введите число от 1 до 500');
-        return;
-      }
-      newValue = parsed;
-    } else if (modalType === 'reviewCount') {
-      const parsed = parseInt(tempValue, 10);
-      if (isNaN(parsed) || parsed < 1 || parsed > 500) {
-        Alert.alert('Неверное значение', 'Введите число от 1 до 500');
+        Alert.alert(t('settings_words_per_day'), '1–500');
         return;
       }
       newValue = parsed;
     }
     handleChangeValue(modalType, newValue);
     setModalVisible(false);
-  };
+  }, [modalType, tempValue, handleChangeValue, t]);
 
   const handleEditName = () => {
-    Alert.prompt('Изменить имя', 'Введите ваше имя:', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Сохранить',
-        onPress: async (text) => {
-          if (text && text.trim()) {
-            const newUser = { ...user, name: text.trim() };
-            setUser(newUser);
-            await saveUserData(newUser);
-            await AsyncStorage.setItem('userName', text.trim());
-          }
+    if (Platform.OS === 'ios') {
+      Alert.prompt('Name', 'Enter your name:', [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('save'),
+          onPress: async (text) => {
+            if (text && text.trim()) {
+              const newUser = { ...user, name: text.trim() };
+              setUser(newUser);
+              await saveUserData(newUser);
+            }
+          },
         },
-      },
-    ], 'plain-text', user.name);
+      ], 'plain-text', user.name);
+    } else {
+      Alert.alert('Name', 'Use modal on Android');
+    }
   };
 
   const handleEditEmail = () => {
-    Alert.prompt('Изменить email', 'Введите ваш email:', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Сохранить',
-        onPress: async (text) => {
-          if (text && text.trim()) {
-            const newUser = { ...user, email: text.trim() };
-            setUser(newUser);
-            await saveUserData(newUser);
-          }
+    if (Platform.OS === 'ios') {
+      Alert.prompt('Email', 'Enter your email:', [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('save'),
+          onPress: async (text) => {
+            if (text && text.trim()) {
+              const newUser = { ...user, email: text.trim() };
+              setUser(newUser);
+              await saveUserData(newUser);
+            }
+          },
         },
-      },
-    ], 'plain-text', user.email);
+      ], 'plain-text', user.email);
+    } else {
+      Alert.alert('Email', 'Use modal on Android');
+    }
   };
 
   const handleLogout = () => {
-    Alert.alert('Выход из аккаунта', 'Вы уверены?', [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Выйти', style: 'destructive', onPress: () => Alert.alert('Успех', 'Вы вышли') },
+    Alert.alert(t('settings_logout'), '', [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('settings_logout'), style: 'destructive', onPress: () => Alert.alert('OK', '') },
     ]);
   };
 
   const handleShare = async () => {
     try {
-      await Share.share({
-        message: 'Изучайте английский с EnglishApp! Присоединяйтесь: https://englishapp.com',
-        title: 'English App',
-      });
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось поделиться');
+      await Share.share({ message: 'EnglishApp: https://englishapp.com', title: 'English App' });
+    } catch (e) {
+      Alert.alert('Error', 'Share failed');
     }
   };
 
   const handleFeedback = () => {
-    Alert.alert('Обратная связь', 'Напишите нам на support@englishapp.com', [
-      { text: 'Написать email', onPress: () => Linking.openURL('mailto:support@englishapp.com') },
-      { text: 'Закрыть', style: 'cancel' },
+    Alert.alert(t('settings_feedback'), 'support@englishapp.com', [
+      { text: 'Email', onPress: () => Linking.openURL('mailto:support@englishapp.com') },
+      { text: t('close'), style: 'cancel' },
     ]);
   };
 
-  // ⭐ ИСПРАВЛЕНО: не удаляем прогресс, только временные данные
   const handleClearCache = () => {
-    Alert.alert(
-      'Очистка кэша',
-      'Удалить временные файлы? Прогресс и настройки сохранены.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Очистить',
-          onPress: async () => {
-            try {
-              // Удаляем только временные данные цитаты и графиков
-              await AsyncStorage.multiRemove([
-                'quoteDate',
-                'dailyQuote',
-                'usedQuoteIds',
-              ]);
-              Alert.alert('Готово', 'Временные данные очищены. Прогресс сохранён.');
-              loadAllData();
-            } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось очистить кэш');
-            }
-          },
+    Alert.alert(t('settings_clear_cache'), t('settings_clear_cache_desc'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('settings_clear_cache'),
+        onPress: async () => {
+          try {
+            await AsyncStorage.multiRemove(['quoteDate', 'dailyQuote', 'usedQuoteIds']);
+            loadAllData();
+          } catch (e) {
+            Alert.alert('Error', 'Cache clear failed');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleExportData = async () => {
@@ -293,55 +341,87 @@ const SettingsScreen = ({ navigation }) => {
       for (const key of allKeys) {
         result[key] = await AsyncStorage.getItem(key);
       }
-      console.log('Экспорт:', result);
-      Alert.alert('Экспорт данных', 'Данные выведены в консоль Metro');
+      const json = JSON.stringify(result, null, 2);
+      console.log('=== ЭКСПОРТ ДАННЫХ ===');
+      console.log(json);
+      console.log('=== КОНЕЦ ЭКСПОРТА ===');
+
+      Alert.alert(
+        t('settings_export'),
+        'Сохранение работает автоматически.\n\n',
+        [
+          { text: t('close'), style: 'cancel' },
+          {
+            text: t('settings_share'),
+            onPress: () => {
+              Share.share({
+                message: json,
+                title: 'EnglishApp Backup',
+              });
+            },
+          },
+        ]
+      );
     } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось экспортировать данные');
+      Alert.alert(t('error'), 'Не удалось экспортировать данные');
     }
   };
 
-  const handleDeleteAccount = () => {
+  const handleImportData = () => {
     Alert.alert(
-      'Удаление аккаунта',
-      'Действие необратимо. Продолжить?',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Удалить',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Удаляем только пользовательские данные, не всю AS
-              await AsyncStorage.multiRemove([
-                '@english_app:words',
-                '@english_app:postponedIds',
-                '@english_app:userSettings',
-                '@english_app:dailyStats',
-                '@english_app:dailyStatsHistory',
-                '@english_app:reviewedWords',
-                '@english_app:celebrationShown',
-                '@english_app:userStats',
-                '@english_app:streakDays',
-                '@english_app:lastActiveDate',
-                'userData',
-                'userName',
-                'userStats',
-                'quoteDate',
-                'dailyQuote',
-                'usedQuoteIds',
-              ]);
-              Alert.alert('Аккаунт удален', 'Все данные удалены');
-              navigation.navigate('Главная');
-            } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось удалить аккаунт');
-            }
-          },
-        },
-      ]
+      t('settings_import'),
+      'Восстановление данных работает автоматически через Google Drive.\n\n' +
+      'Чтобы восстановить прогресс после смены устройства:\n\n' +
+      '1. Убедитесь, что на старом телефоне включено резервное копирование в Google.\n' +
+      '2. На новом устройстве войдите в тот же Google-аккаунт.\n' +
+      '3. Установите приложение заново — система сама вернёт ваши данные.\n\n' +
+      'Если данные не восстановились — удалите приложение и установите заново.',
+      [{ text: t('close'), style: 'cancel' }]
     );
   };
 
-  const SettingItem = ({ icon, title, description, type, value, onPress, onToggle }) => (
+  const handleDeleteAccount = () => {
+    Alert.alert(t('settings_delete_account'), '', [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('delete'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await AsyncStorage.multiRemove([
+              '@english_app:words', '@english_app:postponedIds', '@english_app:userSettings',
+              '@english_app:dailyStats', '@english_app:dailyStatsHistory', '@english_app:reviewedWords',
+              '@english_app:celebrationShown', '@english_app:userStats', '@english_app:streakDays',
+              '@english_app:lastActiveDate', 'userData', 'userName', 'userStats',
+              'quoteDate', 'dailyQuote', 'usedQuoteIds',
+            ]);
+            navigation.navigate(t('tab_home'));
+          } catch (e) {
+            Alert.alert('Error', 'Delete failed');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleLanguageSelect = () => {
+    Alert.alert(t('settings_language'), t('settings_language_desc'), [
+      { text: t('settings_lang_ru'), onPress: () => handleChangeValue('language', 'ru') },
+      { text: t('settings_lang_en'), onPress: () => handleChangeValue('language', 'en') },
+      { text: t('cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const handleFontSizeSelect = () => {
+    Alert.alert(t('settings_font_size'), t('settings_font_size_desc'), [
+      { text: t('settings_font_small'), onPress: () => handleChangeValue('fontSize', 'small') },
+      { text: t('settings_font_medium'), onPress: () => handleChangeValue('fontSize', 'medium') },
+      { text: t('settings_font_large'), onPress: () => handleChangeValue('fontSize', 'large') },
+      { text: t('cancel'), style: 'cancel' },
+    ]);
+  };
+
+  const SettingItem = ({ icon, title, description, type, value, onPress, onToggle, onTest, testLabel }) => (
     <TouchableOpacity
       style={[styles.settingItem, { borderBottomColor: colors.cardBorder }]}
       onPress={onPress}
@@ -352,11 +432,18 @@ const SettingsScreen = ({ navigation }) => {
         <Icon name={icon} size={24} color={colors.primary} />
       </View>
       <View style={styles.settingContent}>
-        <Text style={[styles.settingTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.settingTitle, { color: colors.text, fontSize: 16 * fontSizeMultiplier }]}>{title}</Text>
         {description && (
-          <Text style={[styles.settingDescription, { color: colors.textSecondary }]}>
+          <Text style={[styles.settingDescription, { color: colors.textSecondary, fontSize: 12 * fontSizeMultiplier }]}>
             {description}
           </Text>
+        )}
+        {onTest && (
+          <TouchableOpacity onPress={onTest} style={{ marginTop: 6 }}>
+            <Text style={[styles.testBtnText, { color: colors.primary, fontSize: 13 * fontSizeMultiplier }]}>
+              {testLabel || t('settings_test_flag')}
+            </Text>
+          </TouchableOpacity>
         )}
       </View>
       <View style={styles.settingAction}>
@@ -370,7 +457,7 @@ const SettingsScreen = ({ navigation }) => {
         )}
         {type === 'value' && (
           <View style={styles.settingValue}>
-            <Text style={[styles.settingValueText, { color: colors.primary }]}>{value}</Text>
+            <Text style={[styles.settingValueText, { color: colors.primary, fontSize: 14 * fontSizeMultiplier }]}>{value}</Text>
             <Icon name="chevron-right" size={20} color={colors.textSecondary} />
           </View>
         )}
@@ -381,168 +468,303 @@ const SettingsScreen = ({ navigation }) => {
 
   const SectionHeader = ({ title }) => (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>{title}</Text>
     </View>
   );
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      showsVerticalScrollIndicator={false}
-    >
-      <Animated.View
-        style={[styles.profileCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
-      >
-        <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.profileGradient}>
-          <View style={styles.profileHeader}>
-            <View style={styles.profileAvatar}>
-              <Icon name="person" size={40} color="#fff" />
-            </View>
-            <View style={styles.profileInfo}>
-              <TouchableOpacity onPress={handleEditName}>
-                <Text style={styles.profileName}>{user.name}</Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+        {/* ─── ПРОФИЛЬ ─── */}
+        <Animated.View style={[styles.profileCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.profileGradient}>
+            <View style={styles.profileHeader}>
+              <View style={styles.profileAvatar}>
+                <Icon name="person" size={40} color="#fff" />
+              </View>
+              <View style={styles.profileInfo}>
+                <TouchableOpacity onPress={handleEditName}>
+                  <Text style={[styles.profileName, { fontSize: 18 * fontSizeMultiplier }]}>{user.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleEditEmail}>
+                  <Text style={[styles.profileEmail, { fontSize: 14 * fontSizeMultiplier }]}>{user.email}</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={styles.profileEdit} onPress={handleEditName}>
+                <Icon name="edit" size={20} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleEditEmail}>
-                <Text style={styles.profileEmail}>{user.email}</Text>
-              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.profileEdit} onPress={handleEditName}>
-              <Icon name="edit" size={20} color="#fff" />
+
+            <View style={styles.profileStats}>
+              <View style={styles.profileStat}>
+                <Text style={[styles.profileStatValue, { fontSize: 20 * fontSizeMultiplier }]}>{user.level}</Text>
+                <Text style={[styles.profileStatLabel, { fontSize: 12 * fontSizeMultiplier }]}>{t('settings_level')}</Text>
+              </View>
+              <View style={styles.profileStatDivider} />
+              <View style={styles.profileStat}>
+                <Text style={[styles.profileStatValue, { fontSize: 20 * fontSizeMultiplier }]}>
+                  {Math.floor((new Date() - new Date(user.joinDate)) / (1000 * 60 * 60 * 24))}
+                </Text>
+                <Text style={[styles.profileStatLabel, { fontSize: 12 * fontSizeMultiplier }]}>{t('settings_days_with')}</Text>
+              </View>
+              <View style={styles.profileStatDivider} />
+              <View style={styles.profileStat}>
+                <Text style={[styles.profileStatValue, { fontSize: 20 * fontSizeMultiplier }]}>
+                  {user.level === 'A1' ? t('settings_status_beginner') :
+                   user.level === 'A2' ? t('settings_status_elementary') :
+                   user.level === 'B1' ? t('settings_status_intermediate') :
+                   user.level === 'B2' ? t('settings_status_upper') :
+                   user.level === 'C1' ? t('settings_status_advanced') : t('settings_status_expert')}
+                </Text>
+                <Text style={[styles.profileStatLabel, { fontSize: 12 * fontSizeMultiplier }]}>{t('settings_status')}</Text>
+              </View>
+            </View>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* ─── ОСНОВНЫЕ ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_main')} />
+          <GlassCard style={styles.settingsCard}>
+            <SettingItem
+              icon="notifications"
+              title={t('settings_notifications')}
+              description={t('settings_notifications_desc')}
+              type="toggle"
+              value={settings.notifications}
+              onToggle={handleNotificationsToggle}
+              onTest={sendTestNotification}
+              testLabel={t('settings_test_notification')}
+            />
+            <SettingItem
+              icon="volume-up"
+              title={t('settings_sounds')}
+              description={t('settings_sounds_desc')}
+              type="toggle"
+              value={settings.soundEffects}
+              onToggle={handleSoundToggle}
+              onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')}
+              testLabel={t('settings_test_sound')}
+            />
+            <SettingItem
+              icon="play-circle"
+              title={t('settings_autoplay')}
+              description={t('settings_autoplay_desc')}
+              type="toggle"
+              value={settings.autoPlay}
+              onToggle={handleAutoPlayToggle}
+              onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')}
+              testLabel={t('settings_test_flag')}
+            />
+          </GlassCard>
+        </Animated.View>
+
+        {/* ─── ОФОРМЛЕНИЕ ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_appearance')} />
+          <GlassCard style={styles.settingsCard}>
+            <SettingItem
+              icon="dark-mode"
+              title={t('settings_dark_theme')}
+              description={isDarkMode ? t('settings_dark_on') : t('settings_dark_off')}
+              type="toggle"
+              value={isDarkMode}
+              onToggle={toggleTheme}
+            />
+            <SettingItem
+              icon="text-fields"
+              title={t('settings_font_size')}
+              description={t('settings_font_size_desc')}
+              value={
+                settings.fontSize === 'small' ? t('settings_font_small') :
+                settings.fontSize === 'medium' ? t('settings_font_medium') : t('settings_font_large')
+              }
+              type="value"
+              onPress={handleFontSizeSelect}
+            />
+          </GlassCard>
+        </Animated.View>
+
+        {/* ─── ОБУЧЕНИЕ ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_learning')} />
+          <GlassCard style={styles.settingsCard}>
+            <SettingItem
+              icon="calendar-today"
+              title={t('settings_daily_reminder')}
+              description={t('settings_daily_reminder_desc')}
+              type="toggle"
+              value={settings.dailyReminder}
+              onToggle={() => handleToggle('dailyReminder')}
+            />
+            {settings.dailyReminder && (
+              <SettingItem
+                icon="access-time"
+                title={t('settings_reminder_time')}
+                value={settings.reminderTime}
+                type="value"
+                onPress={() => openModal('reminderTime', settings.reminderTime)}
+              />
+            )}
+            <SettingItem
+              icon="speed"
+              title={t('settings_words_per_day')}
+              description={t('settings_words_per_day_desc')}
+              value={`${settings.wordsPerDay} ${t('settings_words_suffix')}`}
+              type="value"
+              onPress={() => openModal('wordsPerDay', settings.wordsPerDay)}
+            />
+            <SettingItem
+              icon="autorenew"
+              title={t('settings_reviews_per_day')}
+              description={t('settings_reviews_per_day_desc')}
+              value={`${settings.reviewCount} ${t('settings_words_suffix')}`}
+              type="value"
+              onPress={() => openModal('reviewCount', settings.reviewCount)}
+            />
+            <SettingItem
+              icon="language"
+              title={t('settings_language')}
+              description={t('settings_language_desc')}
+              value={settings.language === 'ru' ? t('settings_lang_ru') : t('settings_lang_en')}
+              type="value"
+              onPress={handleLanguageSelect}
+            />
+          </GlassCard>
+        </Animated.View>
+
+        {/* ─── ДАННЫЕ  ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_data')} />
+          <GlassCard style={styles.settingsCard}>
+            <SettingItem
+              icon="cloud-download"
+              title={t('settings_export')}
+              description={t('settings_export_desc')}
+              type="link"
+              onPress={handleExportData}
+            />
+            <SettingItem
+              icon="cloud-upload"
+              title={t('settings_import')}
+              description={t('settings_import_desc')}
+              type="link"
+              onPress={handleImportData}
+            />
+            <SettingItem
+              icon="delete-sweep"
+              title={t('settings_clear_cache')}
+              description={t('settings_clear_cache_desc')}
+              type="link"
+              onPress={handleClearCache}
+            />
+          </GlassCard>
+        </Animated.View>
+
+        {/* ─── О ПРИЛОЖЕНИИ ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_about')} />
+          <GlassCard style={styles.settingsCard}>
+            <SettingItem icon="info" title={t('settings_version')} value="1.0.0" type="value" />
+            <SettingItem
+              icon="feedback"
+              title={t('settings_feedback')}
+              type="link"
+              onPress={handleFeedback}
+            />
+            <SettingItem
+              icon="star"
+              title={t('settings_rate')}
+              type="link"
+              onPress={() => Alert.alert(t('settings_rate'), '')}
+            />
+            <SettingItem
+              icon="share"
+              title={t('settings_share')}
+              type="link"
+              onPress={handleShare}
+            />
+            <SettingItem
+              icon="description"
+              title={t('settings_terms')}
+              type="link"
+              onPress={() => Alert.alert(t('settings_terms'), '')}
+            />
+            <SettingItem
+              icon="privacy-tip"
+              title={t('settings_privacy')}
+              type="link"
+              onPress={() => Alert.alert(t('settings_privacy'), '')}
+            />
+          </GlassCard>
+        </Animated.View>
+
+        {/* ─── АККАУНТ ─── */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <SectionHeader title={t('settings_account')} />
+          <GlassCard style={styles.settingsCard}>
+            <TouchableOpacity style={[styles.dangerButton, styles.logoutButton]} onPress={handleLogout}>
+              <Icon name="exit-to-app" size={20} color={colors.error} />
+              <Text style={[styles.logoutText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>
+                {t('settings_logout')}
+              </Text>
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.profileStats}>
-            <View style={styles.profileStat}>
-              <Text style={styles.profileStatValue}>{user.level}</Text>
-              <Text style={styles.profileStatLabel}>Уровень</Text>
-            </View>
-            <View style={styles.profileStatDivider} />
-            <View style={styles.profileStat}>
-              <Text style={styles.profileStatValue}>
-                {Math.floor((new Date() - new Date(user.joinDate)) / (1000 * 60 * 60 * 24))}
+            <TouchableOpacity
+              style={[styles.dangerButton, styles.deleteButton, { borderTopColor: colors.cardBorder }]}
+              onPress={handleDeleteAccount}
+            >
+              <Icon name="delete-forever" size={20} color={colors.error} />
+              <Text style={[styles.deleteText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>
+                {t('settings_delete_account')}
               </Text>
-              <Text style={styles.profileStatLabel}>Дней с нами</Text>
-            </View>
-            <View style={styles.profileStatDivider} />
-            <View style={styles.profileStat}>
-              <Text style={styles.profileStatValue}>
-                {user.level === 'A1' ? 'Новичок' :
-                 user.level === 'A2' ? 'Начинающий' :
-                 user.level === 'B1' ? 'Средний' :
-                 user.level === 'B2' ? 'Выше среднего' :
-                 user.level === 'C1' ? 'Продвинутый' : 'Эксперт'}
-              </Text>
-              <Text style={styles.profileStatLabel}>Статус</Text>
-            </View>
-          </View>
-        </LinearGradient>
-      </Animated.View>
+            </TouchableOpacity>
+          </GlassCard>
+        </Animated.View>
 
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="Основные" />
-        <GlassCard style={styles.settingsCard}>
-          <SettingItem icon="notifications" title="Уведомления" description="Напоминания о занятиях" type="toggle" value={settings.notifications} onToggle={() => handleToggle('notifications')} />
-          <SettingItem icon="volume-up" title="Звуковые эффекты" description="Звуки при ответах" type="toggle" value={settings.soundEffects} onToggle={() => handleToggle('soundEffects')} />
-          <SettingItem icon="play-circle" title="Автовоспроизведение" description="Автоматически проигрывать произношение" type="toggle" value={settings.autoPlay} onToggle={() => handleToggle('autoPlay')} />
-        </GlassCard>
-      </Animated.View>
+        <View style={styles.bottomPadding} />
+      </ScrollView>
 
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="Оформление" />
-        <GlassCard style={styles.settingsCard}>
-          <SettingItem icon="dark-mode" title="Тёмная тема" description={isDarkMode ? 'Включена' : 'Выключена'} type="toggle" value={isDarkMode} onToggle={toggleTheme} />
-        </GlassCard>
-      </Animated.View>
-
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="Обучение" />
-        <GlassCard style={styles.settingsCard}>
-          <SettingItem icon="calendar-today" title="Ежедневное напоминание" description="Время для занятий" type="toggle" value={settings.dailyReminder} onToggle={() => handleToggle('dailyReminder')} />
-          {settings.dailyReminder && (
-            <SettingItem icon="access-time" title="Время напоминания" value={settings.reminderTime} type="value" onPress={() => openModal('reminderTime', settings.reminderTime)} />
-          )}
-          <SettingItem icon="speed" title="Слов в день" description="Количество новых слов" value={`${settings.wordsPerDay} слов`} type="value" onPress={() => openModal('wordsPerDay', settings.wordsPerDay)} />
-          <SettingItem icon="autorenew" title="Повторов в день" description="Слов для повторения" value={`${settings.reviewCount} слов`} type="value" onPress={() => openModal('reviewCount', settings.reviewCount)} />
-          <SettingItem icon="language" title="Язык интерфейса" value={settings.language === 'ru' ? 'Русский' : 'English'} type="value" onPress={() => Alert.alert('Скоро', 'Другие языки появятся позже')} />
-          <SettingItem icon="text-fields" title="Размер шрифта" value={settings.fontSize === 'small' ? 'Маленький' : settings.fontSize === 'medium' ? 'Средний' : 'Большой'} type="value" onPress={() => Alert.alert('Выберите размер', '', [
-            { text: 'Маленький', onPress: () => handleChangeValue('fontSize', 'small') },
-            { text: 'Средний', onPress: () => handleChangeValue('fontSize', 'medium') },
-            { text: 'Большой', onPress: () => handleChangeValue('fontSize', 'large') },
-            { text: 'Отмена', style: 'cancel' },
-          ])} />
-        </GlassCard>
-      </Animated.View>
-
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="Данные" />
-        <GlassCard style={styles.settingsCard}>
-          <SettingItem icon="cloud-download" title="Экспорт данных" description="Сохранить прогресс" type="link" onPress={handleExportData} />
-          <SettingItem icon="cloud-upload" title="Импорт данных" description="Восстановить прогресс" type="link" onPress={() => Alert.alert('Импорт данных', 'Функция в разработке')} />
-          <SettingItem icon="delete-sweep" title="Очистить кэш" description="Освободить место (прогресс сохраняется)" type="link" onPress={handleClearCache} />
-        </GlassCard>
-      </Animated.View>
-
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="О приложении" />
-        <GlassCard style={styles.settingsCard}>
-          <SettingItem icon="info" title="Версия" value="1.0.0" type="value" />
-          <SettingItem icon="feedback" title="Обратная связь" description="Сообщить о проблеме" type="link" onPress={handleFeedback} />
-          <SettingItem icon="star" title="Оценить приложение" type="link" onPress={() => Alert.alert('Спасибо!', 'Ваша оценка важна для нас')} />
-          <SettingItem icon="share" title="Рассказать друзьям" type="link" onPress={handleShare} />
-          <SettingItem icon="description" title="Пользовательское соглашение" type="link" onPress={() => Alert.alert('Соглашение', 'Читайте на нашем сайте')} />
-          <SettingItem icon="privacy-tip" title="Политика конфиденциальности" type="link" onPress={() => Alert.alert('Политика', 'Мы защищаем ваши данные')} />
-        </GlassCard>
-      </Animated.View>
-
-      <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
-        <SectionHeader title="Аккаунт" />
-        <GlassCard style={styles.settingsCard}>
-          <TouchableOpacity style={[styles.dangerButton, styles.logoutButton]} onPress={handleLogout}>
-            <Icon name="exit-to-app" size={20} color={colors.error} />
-            <Text style={[styles.logoutText, { color: colors.error }]}>Выйти из аккаунта</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.dangerButton, styles.deleteButton, { borderTopColor: colors.cardBorder }]} onPress={handleDeleteAccount}>
-            <Icon name="delete-forever" size={20} color={colors.error} />
-            <Text style={[styles.deleteText, { color: colors.error }]}>Удалить аккаунт</Text>
-          </TouchableOpacity>
-        </GlassCard>
-      </Animated.View>
-
-      <View style={styles.bottomPadding} />
-
-      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+      <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <Animated.View style={[styles.modalContent, { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder, transform: [{ scale: scaleAnim }] }]}>
+          <Animated.View
+            style={[
+              styles.modalContent,
+              {
+                backgroundColor: colors.backgroundSecondary,
+                borderColor: colors.cardBorder,
+                transform: [{ scale: scaleAnim }],
+              },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                {modalType === 'reminderTime' && 'Время напоминания'}
-                {modalType === 'wordsPerDay' && 'Слов в день'}
-                {modalType === 'reviewCount' && 'Повторов в день'}
+              <Text style={[styles.modalTitle, { color: colors.text, fontSize: 18 * fontSizeMultiplier }]}>
+                {modalType === 'reminderTime' && t('modal_reminder_time')}
+                {modalType === 'wordsPerDay' && t('modal_words_per_day')}
+                {modalType === 'reviewCount' && t('modal_reviews_per_day')}
               </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity onPress={closeModal}>
                 <Icon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <View style={styles.modalBody}>
               <TextInput
-                style={[styles.modalInput, { color: colors.text, borderColor: colors.cardBorder }]}
+                style={[styles.modalInput, { color: colors.text, borderColor: colors.cardBorder, fontSize: 16 * fontSizeMultiplier }]}
                 value={tempValue}
                 onChangeText={setTempValue}
                 keyboardType={modalType === 'reminderTime' ? 'default' : 'numeric'}
-                placeholder={
-                  modalType === 'reminderTime' ? 'ЧЧ:ММ' :
-                  modalType === 'wordsPerDay' ? '30' : '15'
-                }
+                placeholder={modalType === 'reminderTime' ? '20:00' : '30'}
                 maxLength={modalType === 'reminderTime' ? 5 : 3}
                 placeholderTextColor={colors.textMuted}
               />
               <View style={styles.modalButtons}>
-                <TouchableOpacity style={[styles.modalButton, styles.modalCancel]} onPress={() => setModalVisible(false)}>
-                  <Text style={[styles.modalCancelText, { color: colors.textSecondary }]}>Отмена</Text>
+                <TouchableOpacity style={[styles.modalButton, styles.modalCancel]} onPress={closeModal}>
+                  <Text style={[styles.modalCancelText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>
+                    {t('cancel')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.modalButton, styles.modalSave]} onPress={handleModalSave}>
                   <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.modalSaveGradient}>
-                    <Text style={styles.modalSaveText}>Сохранить</Text>
+                    <Text style={[styles.modalSaveText, { fontSize: 16 * fontSizeMultiplier }]}>{t('save')}</Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -550,7 +772,7 @@ const SettingsScreen = ({ navigation }) => {
           </Animated.View>
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 };
 
@@ -561,45 +783,46 @@ const styles = StyleSheet.create({
   profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
   profileAvatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   profileInfo: { flex: 1 },
-  profileName: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
-  profileEmail: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  profileName: { fontWeight: 'bold', color: '#fff' },
+  profileEmail: { color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   profileEdit: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   profileStats: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   profileStat: { alignItems: 'center', flex: 1 },
-  profileStatValue: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
-  profileStatLabel: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  profileStatValue: { fontWeight: 'bold', color: '#fff' },
+  profileStatLabel: { color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   profileStatDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.3)' },
   settingsSection: { marginBottom: 16 },
   sectionHeader: { paddingHorizontal: 16, paddingVertical: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '600', textTransform: 'uppercase' },
+  sectionTitle: { fontWeight: '600', textTransform: 'uppercase' },
   settingsCard: { marginHorizontal: 16, padding: 0, overflow: 'hidden', borderRadius: 16, borderWidth: 1 },
   settingItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
   settingIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   settingContent: { flex: 1 },
-  settingTitle: { fontSize: 16, fontWeight: '500' },
-  settingDescription: { fontSize: 12, marginTop: 2 },
+  settingTitle: { fontWeight: '500' },
+  settingDescription: { marginTop: 2 },
   settingAction: { marginLeft: 8 },
   settingValue: { flexDirection: 'row', alignItems: 'center' },
-  settingValueText: { fontSize: 14, marginRight: 4 },
+  settingValueText: { marginRight: 4 },
+  testBtnText: { fontWeight: '600' },
   dangerButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16 },
   logoutButton: { borderBottomWidth: 0 },
   deleteButton: { borderTopWidth: 1 },
-  logoutText: { fontSize: 16, marginLeft: 8 },
-  deleteText: { fontSize: 16, marginLeft: 8 },
+  logoutText: { marginLeft: 8 },
+  deleteText: { marginLeft: 8 },
   bottomPadding: { height: 20 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { borderRadius: 20, width: '100%', maxWidth: 400, overflow: 'hidden', borderWidth: 1 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+  modalTitle: { fontWeight: 'bold' },
   modalBody: { padding: 20 },
-  modalInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 20, backgroundColor: 'rgba(255,255,255,0.05)' },
+  modalInput: { borderWidth: 1, borderRadius: 8, padding: 12, marginBottom: 20, backgroundColor: 'rgba(255,255,255,0.05)' },
   modalButtons: { flexDirection: 'row', justifyContent: 'space-between' },
   modalButton: { flex: 1, marginHorizontal: 4, borderRadius: 8, overflow: 'hidden' },
   modalCancel: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 14, alignItems: 'center' },
-  modalCancelText: { fontSize: 16, fontWeight: '500' },
+  modalCancelText: { fontWeight: '500' },
   modalSave: { overflow: 'hidden' },
   modalSaveGradient: { padding: 14, alignItems: 'center' },
-  modalSaveText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  modalSaveText: { color: '#fff', fontWeight: '600' },
 });
 
 export default SettingsScreen;

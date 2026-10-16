@@ -1,27 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  FlatList,
-  Alert,
-  StatusBar,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, FlatList,
+  Alert, StatusBar, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 
 const GoalsScreen = () => {
-  const { colors } = useTheme();
+  const { colors, fontSizeMultiplier } = useTheme();
+  const { t } = useTranslation();
 
   const [goals, setGoals] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -32,48 +24,26 @@ const GoalsScreen = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadGoals();
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadGoals();
-    }, [])
-  );
+  useEffect(() => { loadGoals(); }, []);
+  useFocusEffect(useCallback(() => { loadGoals(); }, []));
 
   const loadGoals = async () => {
     try {
       setIsLoading(true);
       const saved = await AsyncStorage.getItem('goals');
-      if (saved) {
-        setGoals(JSON.parse(saved));
-      } else {
-        setGoals([]);
-      }
-    } catch (error) {
-      console.log('Ошибка загрузки целей:', error);
-    } finally {
-      setIsLoading(false);
-    }
+      setGoals(saved ? JSON.parse(saved) : []);
+    } catch (e) { console.log('Error loading goals:', e); }
+    finally { setIsLoading(false); }
   };
 
   const saveGoals = async (newGoals) => {
-    try {
-      await AsyncStorage.setItem('goals', JSON.stringify(newGoals));
-    } catch (error) {
-      console.log('Ошибка сохранения целей:', error);
-    }
+    try { await AsyncStorage.setItem('goals', JSON.stringify(newGoals)); }
+    catch (e) { console.log('Error saving goals:', e); }
   };
 
   const addGoal = () => {
-    if (!newGoalText.trim()) {
-      Alert.alert('Ошибка', 'Введите текст цели');
-      return;
-    }
-
+    if (!newGoalText.trim()) { Alert.alert(t('goals_error'), t('goals_enter_text')); return; }
     const targetValue = parseInt(newGoalTarget, 10) || 0;
-
     const newGoal = {
       id: Date.now(),
       text: newGoalText.trim(),
@@ -86,92 +56,54 @@ const GoalsScreen = () => {
       createdAt: new Date().toISOString(),
       completed: false,
     };
-
-    const updatedGoals = [...goals, newGoal];
-    setGoals(updatedGoals);
-    saveGoals(updatedGoals);
-    setNewGoalText('');
-    setNewGoalTarget('');
-    setSelectedCategory('daily');
+    const updated = [...goals, newGoal];
+    setGoals(updated); saveGoals(updated);
+    setNewGoalText(''); setNewGoalTarget(''); setSelectedCategory('daily');
     setShowAddModal(false);
-    Alert.alert('🎯 Успех!', 'Цель добавлена');
+    Alert.alert(t('goals_success'), t('goals_added'));
   };
 
   const deleteGoal = (id) => {
-    Alert.alert('Удалить цель?', 'Вы уверены?', [
-      { text: 'Отмена', style: 'cancel' },
+    Alert.alert(t('goals_delete_confirm'), t('goals_delete_desc'), [
+      { text: t('cancel'), style: 'cancel' },
       {
-        text: 'Удалить',
-        style: 'destructive',
+        text: t('delete'), style: 'destructive',
         onPress: () => {
-          const updatedGoals = goals.filter((g) => g.id !== id);
-          setGoals(updatedGoals);
-          saveGoals(updatedGoals);
+          const updated = goals.filter((g) => g.id !== id);
+          setGoals(updated); saveGoals(updated);
         },
       },
     ]);
   };
 
   const toggleComplete = (id) => {
-    const updatedGoals = goals.map((g) =>
-      g.id === id ? { ...g, completed: !g.completed } : g
-    );
-    setGoals(updatedGoals);
-    saveGoals(updatedGoals);
+    const updated = goals.map((g) => g.id === id ? { ...g, completed: !g.completed } : g);
+    setGoals(updated); saveGoals(updated);
   };
 
   const updateProgress = (id, increment) => {
-    const updatedGoals = goals.map((g) => {
+    const updated = goals.map((g) => {
       if (g.id === id) {
         const max = g.target > 0 ? g.target : 9999;
         const newCurrent = Math.max(0, Math.min(g.current + increment, max));
-        const newProgress =
-          g.target > 0
-            ? Math.round((newCurrent / g.target) * 100)
-            : Math.min(newCurrent * 5, 100);
+        const newProgress = g.target > 0
+          ? Math.round((newCurrent / g.target) * 100)
+          : Math.min(newCurrent * 5, 100);
         return { ...g, current: newCurrent, progress: newProgress };
       }
       return g;
     });
-    setGoals(updatedGoals);
-    saveGoals(updatedGoals);
+    setGoals(updated); saveGoals(updated);
   };
 
-  const getCategoryIcon = (category) => {
-    switch (category) {
-      case 'daily': return 'today';
-      case 'weekly': return 'date-range';
-      case 'monthly': return 'calendar-today';
-      default: return 'flag';
-    }
-  };
-
-  const getCategoryColor = (category) => {
-    switch (category) {
-      case 'daily': return '#2ECC71';
-      case 'weekly': return '#3498DB';
-      case 'monthly': return '#F39C12';
-      default: return '#9B59B6';
-    }
-  };
-
-  const getCategoryLabel = (category) => {
-    switch (category) {
-      case 'daily': return 'Ежедневная';
-      case 'weekly': return 'Еженедельная';
-      case 'monthly': return 'Ежемесячная';
-      default: return 'Цель';
-    }
-  };
-
-  const getCategoryEmoji = (category) => {
-    switch (category) {
-      case 'daily': return '⚡';
-      case 'weekly': return '📅';
-      case 'monthly': return '🎯';
-      default: return '🏆';
-    }
-  };
+  const getCategoryIcon = (c) => ({ daily: 'today', weekly: 'date-range', monthly: 'calendar-today' }[c] || 'flag');
+  const getCategoryColor = (c) => ({ daily: '#2ECC71', weekly: '#3498DB', monthly: '#F39C12' }[c] || '#9B59B6');
+  const getCategoryLabel = (c) => ({
+    daily: t('goals_cat_daily'),
+    weekly: t('goals_cat_weekly'),
+    monthly: t('goals_cat_monthly'),
+  }[c] || '');
+  const getCategoryEmoji = (c) => ({ daily: '⚡', weekly: '📅', monthly: '🎯' }[c] || '🏆');
 
   const getStats = () => {
     const total = goals.length;
@@ -190,89 +122,47 @@ const GoalsScreen = () => {
           <Icon name={item.icon} size={24} color={item.color} />
         </View>
         <View style={styles.goalCategoryBadge}>
-          <Text style={[styles.goalCategoryText, { color: colors.textSecondary }]}>
+          <Text style={[styles.goalCategoryText, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>
             {getCategoryEmoji(item.category)} {getCategoryLabel(item.category)}
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => {
-            setSelectedGoal(item);
-            setShowDetailModal(true);
-          }}
-        >
+        <TouchableOpacity onPress={() => { setSelectedGoal(item); setShowDetailModal(true); }}>
           <Icon name="more-vert" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
 
-      <Text
-        style={[
-          styles.goalText,
-          item.completed && styles.goalTextCompleted,
-          { color: colors.text },
-        ]}
-      >
-        {item.completed ? ' ' : ''}
+      <Text style={[styles.goalText, item.completed && styles.goalTextCompleted, { color: colors.text, fontSize: 16 * fontSizeMultiplier }]}>
         {item.text}
       </Text>
 
       <View style={styles.goalProgressContainer}>
         <View style={styles.goalProgressBar}>
-          <View
-            style={[
-              styles.goalProgressFill,
-              {
-                width: `${Math.min(item.progress, 100)}%`,
-                backgroundColor: item.completed ? colors.primary : item.color,
-              },
-            ]}
-          />
+          <View style={[styles.goalProgressFill, { width: `${Math.min(item.progress, 100)}%`, backgroundColor: item.completed ? colors.primary : item.color }]} />
         </View>
-        <Text style={[styles.goalProgressText, { color: colors.textSecondary }]}>
+        <Text style={[styles.goalProgressText, { color: colors.textSecondary, fontSize: 12 * fontSizeMultiplier }]}>
           {item.completed ? '' : `${Math.min(item.progress, 100)}%`}
         </Text>
       </View>
 
       <View style={styles.goalCounter}>
-        <TouchableOpacity
-          style={[styles.goalCounterBtn, styles.goalCounterBtnMinus]}
-          onPress={() => updateProgress(item.id, -1)}
-        >
+        <TouchableOpacity style={[styles.goalCounterBtn, styles.goalCounterBtnMinus]} onPress={() => updateProgress(item.id, -1)}>
           <Icon name="remove" size={16} color="#fff" />
         </TouchableOpacity>
-
-        <Text style={[styles.goalCounterText, { color: colors.text }]}>
+        <Text style={[styles.goalCounterText, { color: colors.text, fontSize: 15 * fontSizeMultiplier }]}>
           {item.current} / {item.target > 0 ? item.target : '∞'}
         </Text>
-
-        <TouchableOpacity
-          style={[styles.goalCounterBtn, { backgroundColor: item.color }]}
-          onPress={() => updateProgress(item.id, 1)}
-        >
+        <TouchableOpacity style={[styles.goalCounterBtn, { backgroundColor: item.color }]} onPress={() => updateProgress(item.id, 1)}>
           <Icon name="add" size={16} color="#fff" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.goalCardFooter}>
-        <TouchableOpacity
-          style={[styles.goalCheckBtn, item.completed && styles.goalCheckBtnActive]}
-          onPress={() => toggleComplete(item.id)}
-        >
-          <Icon
-            name={item.completed ? 'check-circle' : 'radio-button-unchecked'}
-            size={20}
-            color={item.completed ? colors.primary : colors.textSecondary}
-          />
-          <Text
-            style={[
-              styles.goalCheckText,
-              item.completed && styles.goalCheckTextActive,
-              { color: item.completed ? colors.primary : colors.textSecondary },
-            ]}
-          >
-            {item.completed ? 'Выполнено' : 'Отметить выполненным'}
+        <TouchableOpacity style={styles.goalCheckBtn} onPress={() => toggleComplete(item.id)}>
+          <Icon name={item.completed ? 'check-circle' : 'radio-button-unchecked'} size={20} color={item.completed ? colors.primary : colors.textSecondary} />
+          <Text style={[styles.goalCheckText, { color: item.completed ? colors.primary : colors.textSecondary, fontSize: 13 * fontSizeMultiplier }]}>
+            {item.completed ? t('goals_done') : t('goals_mark_done')}
           </Text>
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.goalDeleteBtn} onPress={() => deleteGoal(item.id)}>
           <Icon name="delete-outline" size={18} color={colors.error} />
         </TouchableOpacity>
@@ -284,163 +174,86 @@ const GoalsScreen = () => {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <Icon name="track-changes" size={60} color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Загрузка целей...
-        </Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>{t('loading')}</Text>
       </View>
     );
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor={colors.primary}
-        translucent={false}
-      />
+      <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
 
-      <LinearGradient
-        colors={[colors.primary, colors.primaryDark]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <Text style={styles.headerTitle}>Мои цели</Text>
-        <Text style={styles.headerSubtitle}>
-          {stats.total} целей • {stats.completed} выполнено
+      <LinearGradient colors={[colors.primary, colors.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
+        <Text style={[styles.headerTitle, { fontSize: 28 * fontSizeMultiplier }]}>🎯 {t('goals_title')}</Text>
+        <Text style={[styles.headerSubtitle, { fontSize: 14 * fontSizeMultiplier }]}>
+          {stats.total} {t('goals_total')} • {stats.completed} {t('goals_completed')}
         </Text>
       </LinearGradient>
 
       {goals.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Icon name="flag" size={60} color={colors.textMuted} />
-          <Text style={[styles.emptyTitle, { color: colors.textSecondary }]}>
-            Нет целей
-          </Text>
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-            Добавьте свою первую цель!
-          </Text>
+          <Text style={[styles.emptyTitle, { color: colors.textSecondary, fontSize: 20 * fontSizeMultiplier }]}>{t('goals_none')}</Text>
+          <Text style={[styles.emptyText, { color: colors.textMuted, fontSize: 14 * fontSizeMultiplier }]}>{t('goals_add_first')}</Text>
         </View>
       ) : (
         <>
-          <GlassCard
-            style={[
-              styles.statsContainer,
-              { backgroundColor: colors.cardBg, borderColor: colors.cardBorder },
-            ]}
-          >
+          <GlassCard style={[styles.statsContainer, { backgroundColor: colors.cardBg, borderColor: colors.cardBorder }]}>
             {['total', 'completed', 'inProgress', 'notStarted'].map((key, i) => (
               <React.Fragment key={key}>
                 <View style={styles.statItem}>
-                  <Text
-                    style={[
-                      styles.statValue,
-                      {
-                        color:
-                          key === 'completed'
-                            ? colors.primary
-                            : key === 'inProgress'
-                            ? colors.warning
-                            : key === 'notStarted'
-                            ? colors.secondary
-                            : colors.text,
-                      },
-                    ]}
-                  >
-                    {key === 'total'
-                      ? stats.total
-                      : key === 'completed'
-                      ? stats.completed
-                      : key === 'inProgress'
-                      ? stats.inProgress
-                      : stats.notStarted}
+                  <Text style={[styles.statValue, {
+                    fontSize: 22 * fontSizeMultiplier,
+                    color: key === 'completed' ? colors.primary :
+                           key === 'inProgress' ? colors.warning :
+                           key === 'notStarted' ? colors.secondary : colors.text,
+                  }]}>
+                    {stats[key]}
                   </Text>
-                  <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                    {key === 'total'
-                      ? 'Всего'
-                      : key === 'completed'
-                      ? 'Выполнено'
-                      : key === 'inProgress'
-                      ? 'В процессе'
-                      : 'Не начато'}
+                  <Text style={[styles.statLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>
+                    {key === 'total' ? t('goals_stats_total') :
+                     key === 'completed' ? t('goals_stats_completed') :
+                     key === 'inProgress' ? t('goals_stats_progress') : t('goals_stats_not_started')}
                   </Text>
                 </View>
-                {i < 3 && (
-                  <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />
-                )}
+                {i < 3 && <View style={[styles.statDivider, { backgroundColor: colors.cardBorder }]} />}
               </React.Fragment>
             ))}
           </GlassCard>
 
-          <FlatList
-            data={goals}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderGoalItem}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-          />
+          <FlatList data={goals} keyExtractor={(item) => item.id.toString()} renderItem={renderGoalItem} contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false} />
         </>
       )}
 
       <TouchableOpacity style={styles.fab} onPress={() => setShowAddModal(true)}>
-        <LinearGradient
-          colors={[colors.primary, colors.primaryDark]}
-          style={styles.fabGradient}
-        >
+        <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.fabGradient}>
           <Icon name="add" size={28} color="#fff" />
         </LinearGradient>
       </TouchableOpacity>
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={showAddModal}
-        onRequestClose={() => setShowAddModal(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.modalOverlay}
-        >
-          <View
-            style={[
-              styles.modalContent,
-              { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder },
-            ]}
-          >
+      <Modal animationType="slide" transparent visible={showAddModal} onRequestClose={() => setShowAddModal(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                Новая цель
-              </Text>
+              <Text style={[styles.modalTitle, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{t('goals_new')}</Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
                 <Icon name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Название цели
-            </Text>
+            <Text style={[styles.modalLabel, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>{t('goals_name')}</Text>
             <TextInput
-              style={[
-                styles.modalInput,
-                { color: colors.text, borderColor: colors.cardBorder },
-              ]}
-              placeholder="Например: выучить 20 новых слов"
+              style={[styles.modalInput, { color: colors.text, borderColor: colors.cardBorder, fontSize: 16 * fontSizeMultiplier }]}
+              placeholder={t('goals_name_placeholder')}
               placeholderTextColor={colors.textMuted}
               value={newGoalText}
               onChangeText={setNewGoalText}
               multiline
-              autoCorrect={false}
-              keyboardType="default"
             />
 
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Целевое количество (необязательно)
-            </Text>
+            <Text style={[styles.modalLabel, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>{t('goals_target')}</Text>
             <TextInput
-              style={[
-                styles.modalInputSmall,
-                { color: colors.text, borderColor: colors.cardBorder },
-              ]}
+              style={[styles.modalInputSmall, { color: colors.text, borderColor: colors.cardBorder, fontSize: 16 * fontSizeMultiplier }]}
               placeholder="0"
               placeholderTextColor={colors.textMuted}
               value={newGoalTarget}
@@ -448,25 +261,15 @@ const GoalsScreen = () => {
               keyboardType="numeric"
             />
 
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Категория
-            </Text>
+            <Text style={[styles.modalLabel, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>{t('goals_category')}</Text>
             <View style={styles.categorySelector}>
               {['daily', 'weekly', 'monthly'].map((cat) => (
                 <TouchableOpacity
                   key={cat}
-                  style={[
-                    styles.categoryOption,
-                    selectedCategory === cat && styles.categoryOptionActive,
-                  ]}
+                  style={[styles.categoryOption, selectedCategory === cat && styles.categoryOptionActive]}
                   onPress={() => setSelectedCategory(cat)}
                 >
-                  <Text
-                    style={[
-                      styles.categoryOptionText,
-                      selectedCategory === cat && styles.categoryOptionTextActive,
-                    ]}
-                  >
+                  <Text style={[styles.categoryOptionText, selectedCategory === cat && styles.categoryOptionTextActive, { fontSize: 12 * fontSizeMultiplier }]}>
                     {getCategoryEmoji(cat)} {getCategoryLabel(cat)}
                   </Text>
                 </TouchableOpacity>
@@ -474,23 +277,12 @@ const GoalsScreen = () => {
             </View>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnCancel]}
-                onPress={() => setShowAddModal(false)}
-              >
-                <Text style={[styles.modalBtnCancelText, { color: colors.textSecondary }]}>
-                  Отмена
-                </Text>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnCancel]} onPress={() => setShowAddModal(false)}>
+                <Text style={[styles.modalBtnCancelText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>{t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnAdd]}
-                onPress={addGoal}
-              >
-                <LinearGradient
-                  colors={[colors.primary, colors.primaryDark]}
-                  style={styles.modalBtnGradient}
-                >
-                  <Text style={styles.modalBtnAddText}>Добавить</Text>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnAdd]} onPress={addGoal}>
+                <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.modalBtnGradient}>
+                  <Text style={[styles.modalBtnAddText, { fontSize: 16 * fontSizeMultiplier }]}>{t('add')}</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -498,114 +290,53 @@ const GoalsScreen = () => {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        animationType="slide"
-        transparent
-        visible={showDetailModal}
-        onRequestClose={() => setShowDetailModal(false)}
-      >
+      <Modal animationType="slide" transparent visible={showDetailModal} onRequestClose={() => setShowDetailModal(false)}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder },
-            ]}
-          >
+          <View style={[styles.modalContent, { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder }]}>
             {selectedGoal && (
               <>
                 <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>
-                    Детали цели
-                  </Text>
+                  <Text style={[styles.modalTitle, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{t('goals_details')}</Text>
                   <TouchableOpacity onPress={() => setShowDetailModal(false)}>
                     <Icon name="close" size={24} color={colors.textSecondary} />
                   </TouchableOpacity>
                 </View>
 
                 <View style={styles.detailContent}>
-                  <View
-                    style={[
-                      styles.detailIconContainer,
-                      { backgroundColor: selectedGoal.color + '20' },
-                    ]}
-                  >
-                    <Icon
-                      name={selectedGoal.icon}
-                      size={40}
-                      color={selectedGoal.color}
-                    />
+                  <View style={[styles.detailIconContainer, { backgroundColor: selectedGoal.color + '20' }]}>
+                    <Icon name={selectedGoal.icon} size={40} color={selectedGoal.color} />
                   </View>
-
-                  <Text style={[styles.detailText, { color: colors.text }]}>
-                    {selectedGoal.text}
-                  </Text>
-
-                  <Text style={[styles.detailCategory, { color: colors.textSecondary }]}>
-                    {getCategoryEmoji(selectedGoal.category)}{' '}
-                    {getCategoryLabel(selectedGoal.category)}
+                  <Text style={[styles.detailText, { color: colors.text, fontSize: 18 * fontSizeMultiplier }]}>{selectedGoal.text}</Text>
+                  <Text style={[styles.detailCategory, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>
+                    {getCategoryEmoji(selectedGoal.category)} {getCategoryLabel(selectedGoal.category)}
                   </Text>
 
                   <View style={styles.detailProgress}>
-                    <Text
-                      style={[styles.detailProgressLabel, { color: colors.textSecondary }]}
-                    >
-                      Прогресс
-                    </Text>
+                    <Text style={[styles.detailProgressLabel, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>{t('goals_progress_label')}</Text>
                     <View style={styles.detailProgressBar}>
-                      <View
-                        style={[
-                          styles.detailProgressFill,
-                          {
-                            width: `${Math.min(selectedGoal.progress, 100)}%`,
-                            backgroundColor: selectedGoal.completed
-                              ? colors.primary
-                              : selectedGoal.color,
-                          },
-                        ]}
-                      />
+                      <View style={[styles.detailProgressFill, { width: `${Math.min(selectedGoal.progress, 100)}%`, backgroundColor: selectedGoal.completed ? colors.primary : selectedGoal.color }]} />
                     </View>
-                    <Text
-                      style={[styles.detailProgressText, { color: colors.textSecondary }]}
-                    >
-                      {selectedGoal.completed
-                        ? 'Выполнено!'
-                        : `${Math.min(selectedGoal.progress, 100)}%`}
+                    <Text style={[styles.detailProgressText, { color: colors.textSecondary, fontSize: 14 * fontSizeMultiplier }]}>
+                      {selectedGoal.completed ? t('goals_done') : `${Math.min(selectedGoal.progress, 100)}%`}
                     </Text>
                   </View>
 
                   <View style={styles.detailTarget}>
-                    <Text
-                      style={[styles.detailTargetLabel, { color: colors.textSecondary }]}
-                    >
+                    <Text style={[styles.detailTargetLabel, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>
                       {selectedGoal.current} / {selectedGoal.target > 0 ? selectedGoal.target : '∞'}
                     </Text>
                   </View>
 
                   <View style={styles.detailActions}>
-                    <TouchableOpacity
-                      style={[styles.detailBtn, styles.detailBtnComplete]}
-                      onPress={() => {
-                        toggleComplete(selectedGoal.id);
-                        setShowDetailModal(false);
-                      }}
-                    >
+                    <TouchableOpacity style={[styles.detailBtn, styles.detailBtnComplete]} onPress={() => { toggleComplete(selectedGoal.id); setShowDetailModal(false); }}>
                       <Icon name="check" size={20} color="#fff" />
-                      <Text style={styles.detailBtnText}>
-                        {selectedGoal.completed
-                          ? 'Отменить выполнение'
-                          : 'Отметить выполненным'}
+                      <Text style={[styles.detailBtnText, { fontSize: 14 * fontSizeMultiplier }]}>
+                        {selectedGoal.completed ? t('goals_mark_undone') : t('goals_mark_done')}
                       </Text>
                     </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.detailBtn, styles.detailBtnDelete]}
-                      onPress={() => {
-                        deleteGoal(selectedGoal.id);
-                        setShowDetailModal(false);
-                      }}
-                    >
+                    <TouchableOpacity style={[styles.detailBtn, styles.detailBtnDelete]} onPress={() => { deleteGoal(selectedGoal.id); setShowDetailModal(false); }}>
                       <Icon name="delete" size={20} color="#fff" />
-                      <Text style={styles.detailBtnText}>Удалить цель</Text>
+                      <Text style={[styles.detailBtnText, { fontSize: 14 * fontSizeMultiplier }]}>{t('goals_delete')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -621,168 +352,75 @@ const GoalsScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 16, fontSize: 16 },
-
-  header: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    paddingHorizontal: 24,
-    paddingTop: 24,          // компенсируем отсутствие SafeAreaView
-    paddingBottom: 24,
-    borderRadius: 20,        // ← скругление
-    overflow: 'hidden',      // ← чтобы градиент не вылезал за углы
-  },
-  headerTitle: { fontSize: 28, fontWeight: 'bold', color: '#fff' },
-  headerSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
-
-  statsContainer: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: 16,
-  },
+  loadingText: { marginTop: 16 },
+  header: { marginHorizontal: 16, marginTop: 12, paddingHorizontal: 24, paddingTop: 24, paddingBottom: 24, borderRadius: 20, overflow: 'hidden' },
+  headerTitle: { fontWeight: 'bold', color: '#fff' },
+  headerSubtitle: { color: 'rgba(255,255,255,0.8)', marginTop: 4 },
+  statsContainer: { marginHorizontal: 16, marginTop: 16, marginBottom: 8, paddingVertical: 16, paddingHorizontal: 12, flexDirection: 'row', borderWidth: 1, borderRadius: 16 },
   statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: 'bold' },
-  statLabel: { fontSize: 11, marginTop: 2 },
+  statValue: { fontWeight: 'bold' },
+  statLabel: { marginTop: 2 },
   statDivider: { width: 1, height: 30 },
-
-  listContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 120,
-  },
-
-  goalCard: {
-    marginBottom: 12,
-    padding: 16,
-    width: '100%',
-    alignSelf: 'center',
-  },
+  listContainer: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 120 },
+  goalCard: { marginBottom: 12, padding: 16, width: '100%', alignSelf: 'center' },
   goalCardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  goalIconContainer: {
-    width: 40, height: 40, borderRadius: 20,
-    justifyContent: 'center', alignItems: 'center', marginRight: 12,
-  },
+  goalIconContainer: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   goalCategoryBadge: { flex: 1 },
-  goalCategoryText: { fontSize: 11, fontWeight: '500' },
-  goalText: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
+  goalCategoryText: { fontWeight: '500' },
+  goalText: { fontWeight: '600', marginBottom: 12 },
   goalTextCompleted: { textDecorationLine: 'line-through', opacity: 0.6 },
-
   goalProgressContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  goalProgressBar: {
-    flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 3, overflow: 'hidden', marginRight: 8,
-  },
+  goalProgressBar: { flex: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 3, overflow: 'hidden', marginRight: 8 },
   goalProgressFill: { height: '100%', borderRadius: 3 },
-  goalProgressText: { fontSize: 12, fontWeight: '500', minWidth: 40, textAlign: 'right' },
-
-  goalCounter: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'center', marginBottom: 12, gap: 16,
-  },
-  goalCounterBtn: {
-    width: 32, height: 32, borderRadius: 16,
-    justifyContent: 'center', alignItems: 'center',
-  },
+  goalProgressText: { fontWeight: '500', minWidth: 40, textAlign: 'right' },
+  goalCounter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12, gap: 16 },
+  goalCounterBtn: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   goalCounterBtnMinus: { backgroundColor: '#E74C3C' },
-  goalCounterText: { fontSize: 15, fontWeight: '600', minWidth: 60, textAlign: 'center' },
-
-  goalCardFooter: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginTop: 4,
-  },
+  goalCounterText: { fontWeight: '600', minWidth: 60, textAlign: 'center' },
+  goalCardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
   goalCheckBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  goalCheckBtnActive: { opacity: 1 },
-  goalCheckText: { fontSize: 13 },
-  goalCheckTextActive: { fontWeight: '500' },
+  goalCheckText: {},
   goalDeleteBtn: { padding: 4 },
-
-  fab: {
-    position: 'absolute', bottom: 30, right: 20,
-    borderRadius: 30, overflow: 'hidden',
-  },
-  fabGradient: {
-    width: 56, height: 56, borderRadius: 28,
-    justifyContent: 'center', alignItems: 'center',
-  },
-
+  fab: { position: 'absolute', bottom: 30, right: 20, borderRadius: 30, overflow: 'hidden' },
+  fabGradient: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center' },
   emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyTitle: { fontSize: 20, fontWeight: '600', marginTop: 16 },
-  emptyText: { fontSize: 14, marginTop: 4 },
-
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center', alignItems: 'center', padding: 20,
-  },
+  emptyTitle: { fontWeight: '600', marginTop: 16 },
+  emptyText: { marginTop: 4 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { borderRadius: 24, width: '100%', maxWidth: 400, padding: 24, borderWidth: 1 },
-  modalHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 16,
-  },
-  modalTitle: { fontSize: 20, fontWeight: 'bold' },
-  modalInput: {
-    borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 16, minHeight: 80,
-    textAlignVertical: 'top', marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  modalInputSmall: {
-    borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 16,
-    marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  modalLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
-
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontWeight: 'bold' },
+  modalInput: { borderWidth: 1, borderRadius: 12, padding: 14, minHeight: 80, textAlignVertical: 'top', marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.05)' },
+  modalInputSmall: { borderWidth: 1, borderRadius: 12, padding: 14, marginBottom: 16, backgroundColor: 'rgba(255,255,255,0.05)' },
+  modalLabel: { fontWeight: '600', marginBottom: 8 },
   categorySelector: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  categoryOption: {
-    flex: 1, paddingVertical: 10, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center',
-  },
+  categoryOption: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center' },
   categoryOptionActive: { backgroundColor: '#2ECC71' },
-  categoryOptionText: { fontSize: 12, color: '#B0B0C0' },
+  categoryOptionText: { color: '#B0B0C0' },
   categoryOptionTextActive: { color: '#fff', fontWeight: '600' },
-
   modalButtons: { flexDirection: 'row', gap: 8 },
   modalBtn: { flex: 1, borderRadius: 12, overflow: 'hidden' },
-  modalBtnCancel: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 14, alignItems: 'center',
-  },
-  modalBtnCancelText: { fontSize: 16, fontWeight: '500' },
+  modalBtnCancel: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 14, alignItems: 'center' },
+  modalBtnCancelText: { fontWeight: '500' },
   modalBtnAdd: { overflow: 'hidden' },
   modalBtnGradient: { padding: 14, alignItems: 'center' },
-  modalBtnAddText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
+  modalBtnAddText: { color: '#fff', fontWeight: '600' },
   detailContent: { alignItems: 'center' },
-  detailIconContainer: {
-    width: 64, height: 64, borderRadius: 32,
-    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
-  },
-  detailText: {
-    fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 4,
-  },
-  detailCategory: { fontSize: 14, marginBottom: 16 },
+  detailIconContainer: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  detailText: { fontWeight: '600', textAlign: 'center', marginBottom: 4 },
+  detailCategory: { marginBottom: 16 },
   detailProgress: { width: '100%', marginBottom: 16 },
-  detailProgressLabel: { fontSize: 14, marginBottom: 6 },
-  detailProgressBar: {
-    height: 8, backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 4, overflow: 'hidden',
-  },
+  detailProgressLabel: { marginBottom: 6 },
+  detailProgressBar: { height: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' },
   detailProgressFill: { height: '100%', borderRadius: 4 },
-  detailProgressText: { fontSize: 14, marginTop: 4, textAlign: 'center' },
+  detailProgressText: { marginTop: 4, textAlign: 'center' },
   detailTarget: { marginBottom: 16 },
-  detailTargetLabel: { fontSize: 16, fontWeight: '600' },
-
+  detailTargetLabel: { fontWeight: '600' },
   detailActions: { width: '100%', gap: 8 },
-  detailBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, borderRadius: 12, gap: 8,
-  },
+  detailBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderRadius: 12, gap: 8 },
   detailBtnComplete: { backgroundColor: '#2ECC71' },
   detailBtnDelete: { backgroundColor: '#E74C3C' },
-  detailBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  detailBtnText: { color: '#fff', fontWeight: '600' },
 });
 
 export default GoalsScreen;

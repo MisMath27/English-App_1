@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const getColors = (isDark) => ({
@@ -9,16 +9,11 @@ export const getColors = (isDark) => ({
   textMuted: isDark ? '#666680' : '#999999',
   cardBorder: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
   cardBg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-
-  // Приглушённый зелёный с переходом
   primary: '#1E9E5A',
   primaryDark: '#167A45',
   primaryLight: '#3FBF7F',
-
-  // Градиент для кнопок и активных элементов
   gradientStart: '#1E9E5A',
   gradientEnd: '#167A45',
-
   secondary: '#3498DB',
   error: '#E74C3C',
   warning: '#F39C12',
@@ -29,23 +24,35 @@ const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [fontSize, setFontSizeState] = useState('medium');
 
   useEffect(() => {
     loadTheme();
+    loadFontSize();
   }, []);
 
   const loadTheme = async () => {
     try {
       const saved = await AsyncStorage.getItem('themeMode');
-      if (saved !== null) {
-        setIsDarkMode(JSON.parse(saved));
-      }
+      if (saved !== null) setIsDarkMode(JSON.parse(saved));
     } catch (error) {
       console.log('Ошибка загрузки темы:', error);
     }
   };
 
-  const toggleTheme = async () => {
+  const loadFontSize = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('@english_app:userSettings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.fontSize) setFontSizeState(parsed.fontSize);
+      }
+    } catch (error) {
+      console.log('Ошибка загрузки шрифта:', error);
+    }
+  };
+
+  const toggleTheme = useCallback(async () => {
     const newMode = !isDarkMode;
     setIsDarkMode(newMode);
     try {
@@ -53,12 +60,30 @@ export const ThemeProvider = ({ children }) => {
     } catch (error) {
       console.log('Ошибка сохранения темы:', error);
     }
-  };
+  }, [isDarkMode]);
+
+  const setFontSize = useCallback((value) => {
+    setFontSizeState(value);
+  }, []);
+
+  const fontSizeMultiplier =
+    fontSize === 'small' ? 0.9 :
+    fontSize === 'large' ? 1.15 :
+    1.0;
 
   const colors = getColors(isDarkMode);
 
   return (
-    <ThemeContext.Provider value={{ isDarkMode, toggleTheme, colors }}>
+    <ThemeContext.Provider
+      value={{
+        isDarkMode,
+        toggleTheme,
+        colors,
+        fontSize,
+        setFontSize,
+        fontSizeMultiplier,
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );

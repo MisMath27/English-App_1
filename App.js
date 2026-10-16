@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
+import { LanguageProvider, useTranslation } from './src/context/LanguageContext';
 
 import MainScreen from './src/screens/MainScreen';
 import LearnScreen from './src/screens/LearnScreen';
@@ -15,9 +16,9 @@ import SettingsScreen from './src/screens/SettingsScreen';
 const Tab = createBottomTabNavigator();
 
 const AppContent = () => {
-  const { colors } = useTheme();
+  const { colors, fontSizeMultiplier } = useTheme();
+  const { t } = useTranslation();
 
-  // Тёмная тема для NavigationContainer, чтобы нигде не проскакивал светлый фон
   const navTheme = {
     ...DarkTheme,
     colors: {
@@ -35,7 +36,6 @@ const AppContent = () => {
     <NavigationContainer theme={navTheme}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
-          // ─── Шапка вкладки (убираем белую полосу) ───
           headerStyle: {
             backgroundColor: colors.background,
             shadowColor: 'transparent',
@@ -46,36 +46,35 @@ const AppContent = () => {
           headerTintColor: colors.text,
           headerTitleStyle: {
             fontWeight: '700',
-            fontSize: 18,
+            fontSize: 18 * fontSizeMultiplier,
             color: colors.text,
           },
           headerTitleAlign: 'left',
-
-          // ─── Иконки ───
           tabBarIcon: ({ color, size }) => {
             let iconName;
-            if (route.name === 'Главная') iconName = 'home';
-            else if (route.name === 'Учить') iconName = 'menu-book';
-            else if (route.name === 'Цели') iconName = 'track-changes';
-            else if (route.name === 'Граф знаний') iconName = 'device-hub';
-            else if (route.name === 'Настройки') iconName = 'settings';
+            if (route.name === t('tab_home')) iconName = 'home';
+            else if (route.name === t('tab_learn')) iconName = 'menu-book';
+            else if (route.name === t('tab_goals')) iconName = 'track-changes';
+            else if (route.name === t('tab_graph')) iconName = 'device-hub';
+            else if (route.name === t('tab_settings')) iconName = 'settings';
             return <Icon name={iconName} size={size} color={color} />;
           },
-
-          // ─── Таб-бар ───
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textSecondary,
           tabBarStyle: {
             backgroundColor: colors.backgroundSecondary,
             borderTopColor: colors.cardBorder,
           },
+          tabBarLabelStyle: {
+            fontSize: 11 * fontSizeMultiplier,
+          },
         })}
       >
-        <Tab.Screen name="Главная" component={MainScreen} />
-        <Tab.Screen name="Учить" component={LearnScreen} />
-        <Tab.Screen name="Цели" component={GoalsScreen} />
-        <Tab.Screen name="Граф знаний" component={KnowledgeGraphScreen} />
-        <Tab.Screen name="Настройки" component={SettingsScreen} />
+        <Tab.Screen name={t('tab_home')} component={MainScreen} />
+        <Tab.Screen name={t('tab_learn')} component={LearnScreen} />
+        <Tab.Screen name={t('tab_goals')} component={GoalsScreen} />
+        <Tab.Screen name={t('tab_graph')} component={KnowledgeGraphScreen} />
+        <Tab.Screen name={t('tab_settings')} component={SettingsScreen} />
       </Tab.Navigator>
     </NavigationContainer>
   );
@@ -85,9 +84,11 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
-        <SafeAreaProvider>
-          <AppContent />
-        </SafeAreaProvider>
+        <LanguageProvider>
+          <SafeAreaProvider>
+            <AppContent />
+          </SafeAreaProvider>
+        </LanguageProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
