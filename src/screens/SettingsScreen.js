@@ -311,8 +311,8 @@ const SettingsScreen = ({ navigation }) => {
   };
 
   const handleFeedback = () => {
-    Alert.alert(t('settings_feedback'), 'support@englishapp.com', [
-      { text: 'Email', onPress: () => Linking.openURL('mailto:support@englishapp.com') },
+    Alert.alert(t('settings_feedback'), 'SupportEnglishApp@gmail.com', [
+      { text: 'Email', onPress: () => Linking.openURL('mailto:SupportEnglishApp@gmail.com') },
       { text: t('close'), style: 'cancel' },
     ]);
   };
