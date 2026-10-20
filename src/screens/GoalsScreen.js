@@ -103,7 +103,7 @@ const GoalsScreen = () => {
     weekly: t('goals_cat_weekly'),
     monthly: t('goals_cat_monthly'),
   }[c] || '');
-  const getCategoryEmoji = (c) => ({ daily: '⚡', weekly: '📅', monthly: '🎯' }[c] || '🏆');
+  const getCategoryEmoji = (c) => ({ daily: '', weekly: '', monthly: '' }[c] || '');
 
   const getStats = () => {
     const total = goals.length;
@@ -184,7 +184,7 @@ const GoalsScreen = () => {
       <StatusBar barStyle="light-content" backgroundColor={colors.primary} translucent={false} />
 
       <LinearGradient colors={[colors.primary, colors.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.header}>
-        <Text style={[styles.headerTitle, { fontSize: 28 * fontSizeMultiplier }]}>🎯 {t('goals_title')}</Text>
+        <Text style={[styles.headerTitle, { fontSize: 28 * fontSizeMultiplier }]}>{t('goals_title')}</Text>
         <Text style={[styles.headerSubtitle, { fontSize: 14 * fontSizeMultiplier }]}>
           {stats.total} {t('goals_total')} • {stats.completed} {t('goals_completed')}
         </Text>

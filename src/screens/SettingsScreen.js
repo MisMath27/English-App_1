@@ -302,6 +302,36 @@ const SettingsScreen = ({ navigation }) => {
     ]);
   };
 
+  const handleRateApp = () => {
+    Linking.openURL('market://details?id=com.englishapp').catch(() => {
+      Linking.openURL('https://play.google.com/store/apps/details?id=com.englishapp');
+    });
+  };
+
+    const handleTerms = () => {
+      Alert.alert(
+        t('settings_terms'),
+        '1. Используя приложение, вы соглашаетесь с условиями.\n\n' +
+        '2. Приложение предоставляется "как есть" для изучения английского языка.\n\n' +
+        '3. Запрещено использовать приложение в незаконных целях.\n\n' +
+        '4. Мы оставляем за собой право обновлять условия.\n\n' +
+        'Полный текст: SupportEnglishApp@gmail.com',
+        [{ text: t('close'), style: 'cancel' }]
+      );
+    };
+
+    const handlePrivacy = () => {
+      Alert.alert(
+        t('settings_privacy'),
+        '1. Мы собираем только данные о вашем прогрессе (выученные слова, цели).\n\n' +
+        '2. Данные хранятся локально на вашем устройстве в защищённом хранилище.\n\n' +
+        '3. Мы не передаём ваши данные третьим лицам.\n\n' +
+        '4. Для синхронизации может использоваться Google Drive (если включено резервное копирование).\n\n' +
+        'Полный текст: SupportEnglishApp@gmail.com',
+        [{ text: t('close'), style: 'cancel' }]
+      );
+    };
+
   const handleShare = async () => {
     try {
       await Share.share({ message: 'EnglishApp: https://englishapp.com', title: 'English App' });
@@ -676,7 +706,7 @@ const SettingsScreen = ({ navigation }) => {
               icon="star"
               title={t('settings_rate')}
               type="link"
-              onPress={() => Alert.alert(t('settings_rate'), '')}
+              onPress={handleRateApp}
             />
             <SettingItem
               icon="share"
@@ -688,13 +718,13 @@ const SettingsScreen = ({ navigation }) => {
               icon="description"
               title={t('settings_terms')}
               type="link"
-              onPress={() => Alert.alert(t('settings_terms'), '')}
+              onPress={handleTerms}
             />
             <SettingItem
               icon="privacy-tip"
               title={t('settings_privacy')}
               type="link"
-              onPress={() => Alert.alert(t('settings_privacy'), '')}
+              onPress={handlePrivacy}
             />
           </GlassCard>
         </Animated.View>
