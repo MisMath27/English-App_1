@@ -116,7 +116,7 @@ const SettingsScreen = ({ navigation }) => {
       const wordsRaw = await AsyncStorage.getItem(wordsKey);
       const words = wordsRaw ? JSON.parse(wordsRaw) : [];
       const learned = words.filter((w) => w.isLearned).length;
-      const level = learned >= 200 ? 'C1' : learned >= 150 ? 'B2' : learned >= 100 ? 'B1' : learned >= 50 ? 'A2' : 'A1';
+      const level = learned >= 2000 ? 'C1' : learned >= 1500 ? 'B2' : learned >= 1000 ? 'B1' : learned >= 500 ? 'A2' : 'A1';
       setUser((prev) => ({ ...prev, level }));
     } catch (error) {
       console.log('Ошибка загрузки:', error);
@@ -547,7 +547,7 @@ const SettingsScreen = ({ navigation }) => {
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_about')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem icon="info" title={t('settings_version')} value="1.0.0" type="value" />
+            <SettingItem icon="info" title={t('settings_version')} value="1.0.1" type="value" />
             <SettingItem icon="feedback" title={t('settings_feedback')} type="link" onPress={() => Linking.openURL('mailto:SupportEnglishApp@gmail.com')} />
             <SettingItem icon="star" title={t('settings_rate')} type="link" onPress={() => Linking.openURL('market://details?id=com.englishapp')} />
             <SettingItem icon="share" title={t('settings_share')} type="link" onPress={() => Share.share({ message: 'EnglishApp' })} />
