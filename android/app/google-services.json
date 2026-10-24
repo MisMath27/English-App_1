@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "324567874490",
+    "project_id": "englishapp-e2d3d",
+    "storage_bucket": "englishapp-e2d3d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:324567874490:android:1c93f88b9fb775a0c57b83",
+        "android_client_info": {
+          "package_name": "com.englishapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgGt6XivYUG-EW7_JyS5zR5THhnS3JDhQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "324567874490-vhlgk8bmlgshqt6l6ungrskhtnv6sdfu.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

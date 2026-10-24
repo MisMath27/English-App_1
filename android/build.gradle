@@ -5,7 +5,7 @@ buildscript {
         compileSdkVersion = 36
         targetSdkVersion = 36
         ndkVersion = "27.1.12297006"
-        kotlinVersion = "1.9.22"
+        kotlinVersion = "2.2.20"
     }
     repositories {
         google()
@@ -15,6 +15,7 @@ buildscript {
         classpath("com.android.tools.build:gradle:7.4.2")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
+        classpath 'com.google.gms:google-services:4.4.2'
     }
 }
 
@@ -27,5 +28,11 @@ allprojects {
         maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
         maven { url 'https://repo.maven.apache.org/maven2' }
         maven { url 'https://www.jitpack.io' }
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force 'com.google.firebase:firebase-auth:23.2.0' // или другая версия, совместимая с Kotlin 2.2.x
     }
 }

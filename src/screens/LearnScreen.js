@@ -5,38 +5,24 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import LinearGradient from 'react-native-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
-import {
-  loadWords, saveWords, loadPostponedIds, savePostponedIds, loadSettings,
-  loadDailyStats, saveDailyStats, loadReviewedWords, saveReviewedWords,
-  loadCelebrationShown, saveCelebrationShown, updateUserStats,
-} from '../utils/progressStorage';
 
 LogBox.ignoreAllLogs();
-
 const { width, height } = Dimensions.get('window');
-
 import WORDS_JSON from '../data/words_with_translation.json';
 
 const VALID_WORDS = WORDS_JSON.filter(item =>
-  item.translation &&
-  item.translation.trim() !== '' &&
-  item.translation !== 'Перевод отсутствует'
+  item.translation && item.translation.trim() !== '' && item.translation !== 'Перевод отсутствует'
 );
 
 const DEFAULT_WORDS = VALID_WORDS.map(item => ({
-  id: item.id,
-  word: item.word,
-  translation: item.translation,
-  level: item.level || 'A1',
-  partOfSpeech: item.partOfSpeech || '',
-  example: item.example || '',
-  transcription: item.transcription || '',
-  reviewCount: 0,
-  isLearned: false,
-  lastReviewed: null,
+  id: item.id, word: item.word, translation: item.translation,
+  level: item.level || 'A1', partOfSpeech: item.partOfSpeech || '',
+  example: item.example || '', transcription: item.transcription || '',
+  reviewCount: 0, isLearned: false, lastReviewed: null,
 }));
 
 const CONFETTI_COLORS = ['#FF6B6B', '#FF9F43', '#FECA57', '#48DBFB', '#0ABDE3', '#10AC84', '#EE5A24', '#5F27CD', '#FF6FB7', '#00D2D3', '#FF9FF3', '#54A0FF'];
@@ -104,9 +90,13 @@ const ConfettiExplosion = ({ count = 100 }) => {
   );
 };
 
-const LearnScreen = ({ route }) => {
+const LearnScreen = ({ route, navigation }) => {
   const { colors, fontSizeMultiplier } = useTheme();
   const { t } = useTranslation();
+
+  const [currentUid, setCurrentUid] = useState(null);
+  const currentUidRef = useRef(null);
+
   const [activeTab, setActiveTab] = useState(route?.params?.tab || 'learn');
   const [wordsPerDay, setWordsPerDay] = useState(30);
   const [reviewCount, setReviewCount] = useState(15);
@@ -123,7 +113,6 @@ const LearnScreen = ({ route }) => {
   const [sessionWords, setSessionWords] = useState([]);
   const [postponedIds, setPostponedIds] = useState([]);
   const [allShown, setAllShown] = useState(false);
-  const [shownCount, setShownCount] = useState(0);
   const [isLearnProcessing, setIsLearnProcessing] = useState(false);
 
   const pan = useRef(new Animated.ValueXY()).current;
@@ -133,8 +122,30 @@ const LearnScreen = ({ route }) => {
   const celebrationOpacity = useRef(new Animated.Value(0)).current;
   const celebrationScale = useRef(new Animated.Value(0.5)).current;
 
-  useEffect(() => { loadData(); }, []);
-  useFocusEffect(useCallback(() => { loadData(); }, []));
+  useEffect(() => {
+    const subscriber = auth().onAuthStateChanged((user) => {
+      const uid = user ? user.uid : null;
+
+      if (currentUidRef.current !== uid) {
+        setAllWords([]);
+        setSessionWords([]);
+        setReviewedWords([]);
+        setPostponedIds([]);
+        setTodayLearned(0);
+        setTodayReviewed(0);
+
+        currentUidRef.current = uid;
+        setCurrentUid(uid);
+
+        if (uid) {
+          loadData(uid);
+        } else {
+          setLoading(false); // Если нет юзера, просто выключаем загрузку
+        }
+      }
+    });
+    return subscriber;
+  }, []);
 
   const shuffleArray = (array) => {
     const shuffled = [...array];
@@ -165,14 +176,15 @@ const LearnScreen = ({ route }) => {
     if (activeTab !== 'learn') {
       const learned = allWords.filter(w => w.isLearned && !reviewedWords.includes(w.id));
       setSessionWords(shuffleArray(learned).slice(0, reviewCount));
-      setCurrentIndex(0); setAllShown(false); setShownCount(0);
+      setCurrentIndex(0); setAllShown(false);
       return;
     }
     const remaining = wordsPerDay - todayLearned;
     if (remaining <= 0) {
       setSessionWords([]);
       if (!celebrationShown && todayLearned >= wordsPerDay) {
-        setCelebrationShown(true); saveCelebrationShown(true);
+        setCelebrationShown(true);
+        if (currentUidRef.current) AsyncStorage.setItem(`@english_app:celebrationShown_${currentUidRef.current}`, 'true');
         showCelebrationAnimation(`🎉 ${wordsPerDay}`);
       }
       return;
@@ -182,12 +194,12 @@ const LearnScreen = ({ route }) => {
     const others = notLearned.filter(w => !postponedIds.includes(w.id));
     const finalList = [...postponed, ...shuffleArray(others)];
     setSessionWords(finalList.slice(0, remaining));
-    setCurrentIndex(0); setAllShown(false); setShownCount(0);
+    setCurrentIndex(0); setAllShown(false);
   }, [activeTab, allWords, wordsPerDay, reviewCount, todayLearned, postponedIds, celebrationShown, reviewedWords]);
 
   useEffect(() => {
     if (!loading && allWords.length > 0 && !isLearnProcessing) generateSession();
-  }, [allWords, todayLearned, postponedIds, reviewedWords, reviewCount]);
+  }, [allWords, todayLearned, postponedIds, reviewedWords, reviewCount, loading, isLearnProcessing, generateSession]);
 
   const getCurrentWord = useCallback(() => {
     if (sessionWords.length === 0) return null;
@@ -195,29 +207,71 @@ const LearnScreen = ({ route }) => {
     return sessionWords[Math.floor(Math.random() * sessionWords.length)] || sessionWords[0];
   }, [sessionWords, currentIndex, allShown]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      let words = await loadWords();
-      if (!words || words.length === 0) { words = DEFAULT_WORDS; await saveWords(words); }
-      setAllWords(words);
-      setPostponedIds(await loadPostponedIds());
-      const settings = await loadSettings();
-      setWordsPerDay(settings.wordsPerDay || 30);
-      setReviewCount(settings.reviewCount || 15);
-      const daily = await loadDailyStats();
-      setTodayLearned(daily.learned || 0);
-      setTodayReviewed(daily.reviewed || 0);
-      const reviewed = await loadReviewedWords();
-      setReviewedWords(reviewed);
-      setTodayReviewed(reviewed.length);
-      setCelebrationShown(await loadCelebrationShown());
-      await updateUserStats(words);
-    } catch (error) {
-      console.log('Error loading:', error);
-      setAllWords(DEFAULT_WORDS); await saveWords(DEFAULT_WORDS);
-    } finally { setLoading(false); }
-  };
+    const loadData = async (uid) => {
+      try {
+        // ЖЕСТКАЯ ПРОВЕРКА: Если uid нет, вообще ничего не грузим!
+        if (!uid) {
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+        setAllWords([]); // Очищаем память от старых слов
+
+        const wordsKey = `@english_app:words_${uid}`;
+        const rawWords = await AsyncStorage.getItem(wordsKey);
+
+        let words;
+        if (rawWords) {
+          words = JSON.parse(rawWords);
+          // Проверка: если вдруг подгрузились старые данные с 7780, а база 9894
+          if (words.length !== 9894) {
+             console.log('Обнаружены старые данные, сбрасываем на дефолт');
+             words = DEFAULT_WORDS;
+             await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+          }
+        } else {
+          words = DEFAULT_WORDS;
+          await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+        }
+
+        setAllWords(words);
+
+        // ... (остальной код загрузки postponed, settings, dailyStats, reviewedWords, celebration остается как был,
+        // но с ключами строго через `_${uid}`)
+
+        const postponedKey = `@english_app:postponedIds_${uid}`;
+        const rawPostponed = await AsyncStorage.getItem(postponedKey);
+        setPostponedIds(rawPostponed ? JSON.parse(rawPostponed) : []);
+
+        const settingsKey = `@english_app:userSettings_${uid}`;
+        const rawSettings = await AsyncStorage.getItem(settingsKey);
+        const settings = rawSettings ? JSON.parse(rawSettings) : {};
+        setWordsPerDay(settings.wordsPerDay || 30);
+        setReviewCount(settings.reviewCount || 15);
+
+        const dailyKey = `@english_app:dailyStats_${uid}`;
+        const rawDaily = await AsyncStorage.getItem(dailyKey);
+        const daily = rawDaily ? JSON.parse(rawDaily) : {};
+        setTodayLearned(daily.learned || 0);
+
+        const reviewedKey = `@english_app:reviewedWords_${uid}`;
+        const rawReviewed = await AsyncStorage.getItem(reviewedKey);
+        const reviewed = rawReviewed ? JSON.parse(rawReviewed) : [];
+        setReviewedWords(reviewed);
+        setTodayReviewed(reviewed.length);
+
+        const celebrationKey = `@english_app:celebrationShown_${uid}`;
+        const rawCelebration = await AsyncStorage.getItem(celebrationKey);
+        setCelebrationShown(rawCelebration === 'true');
+
+      } catch (error) {
+        console.log('Error loading:', error);
+        setAllWords(DEFAULT_WORDS);
+      } finally {
+        setLoading(false);
+      }
+    };
 
   const currentWord = getCurrentWord();
 
@@ -253,6 +307,7 @@ const LearnScreen = ({ route }) => {
     const isLearnTab = activeTab === 'learn';
     const isLearning = direction === 1 && isLearnTab;
     const isPostponing = direction === -1 && isLearnTab;
+    const activeUid = currentUidRef.current;
 
     if (isLearnTab) {
       if (isLearning) {
@@ -260,16 +315,24 @@ const LearnScreen = ({ route }) => {
         const newAllWords = allWords.map(w => w.id === currentWord.id ? { ...w, isLearned: true, lastReviewed: new Date().toISOString() } : w);
         const newPostponedIds = postponedIds.filter(id => id !== currentWord.id);
         setAllWords(newAllWords); setPostponedIds(newPostponedIds);
-        await saveWords(newAllWords); await savePostponedIds(newPostponedIds);
-        const daily = await saveDailyStats('learn');
-        setTodayLearned(daily.learned);
-        await updateUserStats(newAllWords);
-        if (daily.learned >= wordsPerDay && !celebrationShown) {
-          setCelebrationShown(true); await saveCelebrationShown(true);
+
+        await AsyncStorage.setItem(`@english_app:words_${activeUid}`, JSON.stringify(newAllWords));
+        await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
+
+        const dailyKey = `@english_app:dailyStats_${activeUid}`;
+        const rawDaily = await AsyncStorage.getItem(dailyKey);
+        const daily = rawDaily ? JSON.parse(rawDaily) : {};
+        const newLearned = (daily.learned || 0) + 1;
+        await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, learned: newLearned }));
+        setTodayLearned(newLearned);
+
+        if (newLearned >= wordsPerDay && !celebrationShown) {
+          setCelebrationShown(true);
+          await AsyncStorage.setItem(`@english_app:celebrationShown_${activeUid}`, 'true');
           showCelebrationAnimation(`🎉 ${wordsPerDay}`);
         }
         const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false); setShownCount(0);
+        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
         setTimeout(() => {
           if (updatedSession.length === 0) generateSession();
           setIsLearnProcessing(false); isProcessing.current = false;
@@ -277,9 +340,11 @@ const LearnScreen = ({ route }) => {
       } else if (isPostponing) {
         const newPostponedIds = [...postponedIds];
         if (!newPostponedIds.includes(currentWord.id)) newPostponedIds.push(currentWord.id);
-        setPostponedIds(newPostponedIds); await savePostponedIds(newPostponedIds);
+        setPostponedIds(newPostponedIds);
+        await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
+
         const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false); setShownCount(0);
+        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
         setTimeout(() => {
           if (updatedSession.length === 0) generateSession();
           isProcessing.current = false;
@@ -289,13 +354,17 @@ const LearnScreen = ({ route }) => {
       if (direction === 1) {
         if (!reviewedWords.includes(currentWord.id)) {
           const newReviewed = [...reviewedWords, currentWord.id];
-          setReviewedWords(newReviewed); await saveReviewedWords(newReviewed);
-          const daily = await saveDailyStats('review');
+          setReviewedWords(newReviewed);
+          await AsyncStorage.setItem(`@english_app:reviewedWords_${activeUid}`, JSON.stringify(newReviewed));
+
+          const dailyKey = `@english_app:dailyStats_${activeUid}`;
+          const rawDaily = await AsyncStorage.getItem(dailyKey);
+          const daily = rawDaily ? JSON.parse(rawDaily) : {};
+          await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, reviewed: newReviewed.length }));
           setTodayReviewed(newReviewed.length);
-          await updateUserStats(allWords);
         }
         const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false); setShownCount(0);
+        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
         setTimeout(() => {
           if (updatedSession.length === 0) generateSession();
           isProcessing.current = false;
@@ -308,7 +377,7 @@ const LearnScreen = ({ route }) => {
 
   const switchTab = (tab) => {
     setActiveTab(tab); setCurrentIndex(0); setShowTranslation(false);
-    setShowCelebration(false); setAllShown(false); setShownCount(0);
+    setShowCelebration(false); setAllShown(false);
     pan.setValue({ x: 0, y: 0 }); scale.setValue(1); rotate.setValue(0);
     setTimeout(() => generateSession(), 100);
   };
@@ -316,6 +385,25 @@ const LearnScreen = ({ route }) => {
   const totalLearnedWords = allWords.filter(w => w.isLearned).length;
   const hasLearnedWords = totalLearnedWords > 0;
   const allReviewed = hasLearnedWords && allWords.filter(w => w.isLearned).every(w => reviewedWords.includes(w.id));
+
+  // Если пользователь не авторизован, показываем экран входа
+  if (!currentUid && !loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+         <Icon name="lock" size={80} color={colors.primary} />
+         <Text style={{color: colors.text, fontSize: 22, marginTop: 20, fontWeight: 'bold'}}>Требуется вход</Text>
+         <Text style={{color: colors.textSecondary, fontSize: 16, marginTop: 10, textAlign: 'center', paddingHorizontal: 40}}>
+            Для сохранения прогресса и доступа к словарю, пожалуйста, войдите в аккаунт в настройках.
+         </Text>
+         <TouchableOpacity
+           style={{ marginTop: 30, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 30, borderRadius: 10 }}
+           onPress={() => navigation.navigate(t('tab_settings'))}
+         >
+           <Text style={{color: '#fff', fontSize: 16, fontWeight: '600'}}>Перейти в настройки</Text>
+         </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
   if (loading) {
     return (

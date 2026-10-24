@@ -7,14 +7,18 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import auth from '@react-native-firebase/auth';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
+
+const BASE_GOALS_KEY = '@english_app:goals';
 
 const GoalsScreen = () => {
   const { colors, fontSizeMultiplier } = useTheme();
   const { t } = useTranslation();
 
+  const [currentUid, setCurrentUid] = useState(null);
   const [goals, setGoals] = useState([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGoalText, setNewGoalText] = useState('');
@@ -24,20 +28,36 @@ const GoalsScreen = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => { loadGoals(); }, []);
-  useFocusEffect(useCallback(() => { loadGoals(); }, []));
 
-  const loadGoals = async () => {
+
+  const getKey = (uid) => uid ? `${BASE_GOALS_KEY}_${uid}` : `${BASE_GOALS_KEY}_guest`;
+
+  useFocusEffect(
+    useCallback(() => {
+      const user = auth().currentUser;
+      const uid = user ? user.uid : null;
+      setCurrentUid(uid);
+      if (uid) {
+        loadGoals(uid);
+      } else {
+        setIsLoading(false);
+      }
+    }, [])
+  );
+
+  const loadGoals = async (uid) => {
     try {
       setIsLoading(true);
-      const saved = await AsyncStorage.getItem('goals');
+      const saved = await AsyncStorage.getItem(`@english_app:goals_${uid}`);
       setGoals(saved ? JSON.parse(saved) : []);
     } catch (e) { console.log('Error loading goals:', e); }
     finally { setIsLoading(false); }
   };
 
+  // В функции saveGoals:
   const saveGoals = async (newGoals) => {
-    try { await AsyncStorage.setItem('goals', JSON.stringify(newGoals)); }
+    if (!currentUid) return;
+    try { await AsyncStorage.setItem(`@english_app:goals_${currentUid}`, JSON.stringify(newGoals)); }
     catch (e) { console.log('Error saving goals:', e); }
   };
 

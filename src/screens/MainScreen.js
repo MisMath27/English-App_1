@@ -1,26 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Dimensions,
-  Animated,
-  Easing,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Dimensions, Animated, Easing,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { BarChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import auth from '@react-native-firebase/auth';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
-import {
-  loadUserStats,
-  loadWords,
-  loadDailyHistory,
-} from '../utils/progressStorage';
 
 const { width } = Dimensions.get('window');
 
@@ -49,41 +40,35 @@ const MainScreen = ({ navigation }) => {
   const [userName, setUserName] = useState('');
   const [userData, setUserData] = useState({ streakDays: 0, accuracy: 0, weeklyProgress: 0 });
 
+  const [currentUid, setCurrentUid] = useState(null);
+  const currentUidRef = useRef(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const bounceAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const getDailyQuote = async () => {
-    try {
-      const today = new Date().toDateString();
-      const storedDate = await AsyncStorage.getItem('quoteDate');
-      const storedQuote = await AsyncStorage.getItem('dailyQuote');
-      if (storedDate === today && storedQuote) {
-        setQuote(JSON.parse(storedQuote));
-        return;
-      }
-      const usedIdsJson = await AsyncStorage.getItem('usedQuoteIds');
-      let usedIds = usedIdsJson ? JSON.parse(usedIdsJson) : [];
-      if (usedIds.length >= QUOTES_DATABASE.length) usedIds = [];
-      const availableQuotes = QUOTES_DATABASE.filter(q => !usedIds.includes(q.id));
-      let randomQuote;
-      if (availableQuotes.length > 0) {
-        randomQuote = availableQuotes[Math.floor(Math.random() * availableQuotes.length)];
-      } else {
-        randomQuote = QUOTES_DATABASE[Math.floor(Math.random() * QUOTES_DATABASE.length)];
-        usedIds = [];
-      }
-      const newUsedIds = [...usedIds, randomQuote.id];
-      await AsyncStorage.setItem('quoteDate', today);
-      await AsyncStorage.setItem('dailyQuote', JSON.stringify(randomQuote));
-      await AsyncStorage.setItem('usedQuoteIds', JSON.stringify(newUsedIds));
-      setQuote(randomQuote);
-    } catch (error) {
-      console.log('Error loading quote:', error);
-      setQuote(QUOTES_DATABASE[0]);
-    }
-  };
+  useFocusEffect(
+    useCallback(() => {
+      const unsubscribeAuth = auth().onAuthStateChanged((user) => {
+        const uid = user ? user.uid : null;
+
+        if (currentUidRef.current !== uid) {
+          setVocabularySize({ total: 0, learned: 0, inProgress: 0, toReview: 0 });
+          currentUidRef.current = uid;
+          setCurrentUid(uid);
+
+          if (uid) {
+             loadUserData(uid);
+             getDailyQuote(uid);
+          } else {
+             setLoading(false);
+          }
+        }
+      });
+      return () => unsubscribeAuth();
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -99,41 +84,101 @@ const MainScreen = ({ navigation }) => {
     ).start();
   }, []);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadUserData();
-      getDailyQuote();
-    });
-    return unsubscribe;
-  }, [navigation, selectedPeriod]);
-
-  const loadUserData = async () => {
+  const getDailyQuote = async (uid) => {
     try {
-      setLoading(true);
-      const savedName = await AsyncStorage.getItem('userName');
-      if (savedName) setUserName(savedName);
-      const words = (await loadWords()) || [];
-      const total = words.length;
-      const learned = words.filter(w => w.isLearned).length;
-      const inProgress = words.filter(w => w.reviewCount > 0 && !w.isLearned).length;
-      setVocabularySize({ total, learned, inProgress, toReview: learned });
-      const stats = await loadUserStats();
-      setUserData({
-        streakDays: stats.streakDays || 0,
-        accuracy: stats.accuracy || 0,
-        weeklyProgress: stats.weeklyProgress || 0,
-      });
-      await generateRealChartData(selectedPeriod);
-      setLoading(false);
+      const today = new Date().toDateString();
+      const quoteKey = `@english_app:quoteDate_${uid}`;
+      const dailyQuoteKey = `@english_app:dailyQuote_${uid}`;
+      const usedIdsKey = `@english_app:usedQuoteIds_${uid}`;
+
+      const storedDate = await AsyncStorage.getItem(quoteKey);
+      const storedQuote = await AsyncStorage.getItem(dailyQuoteKey);
+
+      if (storedDate === today && storedQuote) {
+        setQuote(JSON.parse(storedQuote));
+        return;
+      }
+
+      const usedIdsJson = await AsyncStorage.getItem(usedIdsKey);
+      let usedIds = usedIdsJson ? JSON.parse(usedIdsJson) : [];
+      if (usedIds.length >= QUOTES_DATABASE.length) usedIds = [];
+      const availableQuotes = QUOTES_DATABASE.filter(q => !usedIds.includes(q.id));
+      let randomQuote;
+
+      if (availableQuotes.length > 0) {
+        randomQuote = availableQuotes[Math.floor(Math.random() * availableQuotes.length)];
+      } else {
+        randomQuote = QUOTES_DATABASE[Math.floor(Math.random() * QUOTES_DATABASE.length)];
+        usedIds = [];
+      }
+      const newUsedIds = [...usedIds, randomQuote.id];
+
+      await AsyncStorage.setItem(quoteKey, today);
+      await AsyncStorage.setItem(dailyQuoteKey, JSON.stringify(randomQuote));
+      await AsyncStorage.setItem(usedIdsKey, JSON.stringify(newUsedIds));
+      setQuote(randomQuote);
     } catch (error) {
-      console.error('Error loading data:', error);
-      setLoading(false);
+      console.log('Error loading quote:', error);
+      setQuote(QUOTES_DATABASE[0]);
     }
   };
 
-  const generateRealChartData = async (period) => {
+    const loadUserData = async (uid) => {
+      try {
+        if (!uid) {
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+
+        const userNameKey = `@english_app:userName_${uid}`;
+        const savedName = await AsyncStorage.getItem(userNameKey);
+        if (savedName) setUserName(savedName);
+        else if (auth().currentUser) setUserName(auth().currentUser.displayName || '');
+
+        const wordsKey = `@english_app:words_${uid}`;
+        const rawWords = await AsyncStorage.getItem(wordsKey);
+
+        let words = [];
+        if (rawWords) {
+          words = JSON.parse(rawWords);
+          // Проверка на старые данные
+          if (words.length !== 9894) {
+              const WORDS_JSON = require('../data/words_with_translation.json');
+              words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
+                ...item, isLearned: false
+              }));
+              await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+          }
+        } else {
+          const WORDS_JSON = require('../data/words_with_translation.json');
+          words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
+            ...item, isLearned: false
+          }));
+          await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+        }
+
+        const total = words.length;
+        const learned = words.filter(w => w.isLearned).length;
+        const inProgress = words.filter(w => w.reviewCount > 0 && !w.isLearned).length;
+
+        setVocabularySize({ total, learned, inProgress, toReview: learned });
+
+        // ... (статистика)
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  const generateRealChartData = async (period, uid) => {
     try {
-      const history = await loadDailyHistory();
+      const historyKey = `@english_app:dailyStatsHistory_${uid}`;
+      const rawHistory = await AsyncStorage.getItem(historyKey);
+      const history = rawHistory ? JSON.parse(rawHistory) : {};
+
       const today = new Date();
       let labels = [];
       let learnedData = [];
@@ -193,13 +238,6 @@ const MainScreen = ({ navigation }) => {
       });
     } catch (error) {
       console.log('Error generating chart:', error);
-      setChartData({
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        datasets: [
-          { data: [0, 0, 0, 0, 0, 0, 0], color: (o = 1) => `rgba(76, 175, 80, ${o})` },
-          { data: [0, 0, 0, 0, 0, 0, 0], color: (o = 1) => `rgba(33, 150, 243, ${o})` },
-        ],
-      });
     }
   };
 
@@ -209,7 +247,7 @@ const MainScreen = ({ navigation }) => {
       Animated.timing(progressAnim, { toValue: 0.5, duration: 150, useNativeDriver: false }),
       Animated.timing(progressAnim, { toValue: 1, duration: 300, useNativeDriver: false }),
     ]).start();
-    generateRealChartData(period);
+    generateRealChartData(period, currentUidRef.current);
   };
 
   const getVocabularyLevel = (count) => {
@@ -220,6 +258,24 @@ const MainScreen = ({ navigation }) => {
   };
 
   const level = getVocabularyLevel(vocabularySize.learned);
+
+  if (!currentUid && !loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+         <Icon name="lock" size={80} color={colors.primary} />
+         <Text style={{color: colors.text, fontSize: 22, marginTop: 20, fontWeight: 'bold'}}>Добро пожаловать!</Text>
+         <Text style={{color: colors.textSecondary, fontSize: 16, marginTop: 10, textAlign: 'center', paddingHorizontal: 40}}>
+            Войдите в аккаунт, чтобы сохранять прогресс и видеть статистику.
+         </Text>
+         <TouchableOpacity
+           style={{ marginTop: 30, backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 30, borderRadius: 10 }}
+           onPress={() => navigation.navigate(t('tab_settings'))}
+         >
+           <Text style={{color: '#fff', fontSize: 16, fontWeight: '600'}}>Войти</Text>
+         </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -254,23 +310,6 @@ const MainScreen = ({ navigation }) => {
             : t('home_start_learning')}
         </Text>
       </Animated.View>
-
-      {vocabularySize.total === 0 && !loading && (
-        <View style={styles.welcomeContainer}>
-          <Icon name="emoji-emotions" size={60} color={colors.primary} />
-          <Text style={[styles.welcomeTitle, { color: colors.text, fontSize: 24 * fontSizeMultiplier }]}>
-            {t('home_welcome')}
-          </Text>
-          <Text style={[styles.welcomeText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>
-            {t('home_welcome_text')}
-          </Text>
-          <TouchableOpacity style={styles.welcomeButton} onPress={() => navigation.navigate(t('tab_learn'))}>
-            <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.welcomeButtonGradient}>
-              <Text style={[styles.welcomeButtonText, { fontSize: 16 * fontSizeMultiplier }]}>{t('home_start')}</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {vocabularySize.total > 0 && (
         <>

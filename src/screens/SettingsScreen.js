@@ -1,52 +1,38 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-  Alert,
-  Modal,
-  TextInput,
-  Animated,
-  Easing,
-  Share,
-  Linking,
-  Platform,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch,
+  Alert, Modal, TextInput, Animated, Easing, Share, Linking, Platform, Image
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import LinearGradient from 'react-native-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import notifee, { AuthorizationStatus } from '@notifee/react-native';
+import notifee, { AuthorizationStatus, TriggerType, RepeatFrequency } from '@notifee/react-native';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
-import { loadSettings, saveSettings, loadWords } from '../utils/progressStorage';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import auth from '@react-native-firebase/auth';
 
-const SETTINGS_KEY = '@english_app:userSettings';
+const BASE_SETTINGS_KEY = '@english_app:userSettings';
+const BASE_USER_DATA_KEY = 'userData';
+const BASE_WORDS_KEY = '@english_app:words';
+const BASE_GOALS_KEY = '@english_app:goals';
 
 const SettingsScreen = ({ navigation }) => {
   const { isDarkMode, toggleTheme, colors, setFontSize, fontSizeMultiplier } = useTheme();
   const { t, setLanguage } = useTranslation();
 
-  const [settings, setSettings] = useState({
-    notifications: true,
-    soundEffects: true,
-    autoPlay: false,
-    dailyReminder: true,
-    reminderTime: '20:00',
-    wordsPerDay: 30,
-    reviewCount: 15,
-    language: 'ru',
-    fontSize: 'medium',
-  });
+  const [currentUid, setCurrentUid] = useState(null);
 
   const [user, setUser] = useState({
-    name: 'Пользователь',
-    email: 'user@example.com',
-    level: 'A1',
-    joinDate: new Date().toISOString().split('T')[0],
+    name: 'Гость', email: 'Войдите в аккаунт', level: 'A1',
+    joinDate: new Date().toISOString().split('T')[0], photoURL: null
+  });
+
+  const [settings, setSettings] = useState({
+    notifications: true, soundEffects: true, autoPlay: false,
+    dailyReminder: true, reminderTime: '20:00', wordsPerDay: 30,
+    reviewCount: 15, language: 'ru', fontSize: 'medium',
   });
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -63,105 +49,195 @@ const SettingsScreen = ({ navigation }) => {
       Animated.timing(slideAnim, { toValue: 0, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
     ]).start();
-    loadAllData();
+
+    GoogleSignin.configure({
+      webClientId: '891565206364-6tncrmbgur0qjfhgrvbf95pofekn1i3p.apps.googleusercontent.com',
+      offlineAccess: false,
+    });
   }, []);
 
-  const loadAllData = async () => {
+  useEffect(() => {
+    const subscriber = auth().onAuthStateChanged((fbUser) => {
+      const uid = fbUser ? fbUser.uid : null;
+      setCurrentUid(uid);
+
+      if (fbUser) {
+        const userData = {
+          uid: fbUser.uid,
+          name: fbUser.displayName || 'Пользователь',
+          email: fbUser.email || '',
+          photoURL: fbUser.photoURL || null,
+          level: 'A1',
+          joinDate: new Date().toISOString().split('T')[0]
+        };
+        setUser(userData);
+        loadAllData(uid);
+      } else {
+        setUser({ name: 'Гость', email: 'Войдите в аккаунт', level: 'A1', joinDate: new Date().toISOString().split('T')[0], photoURL: null });
+      }
+    });
+    return subscriber;
+  }, []);
+
+  const getKey = (baseKey) => currentUid ? `${baseKey}_${currentUid}` : baseKey;
+
+  const loadAllData = async (uid) => {
     try {
-      const saved = await loadSettings();
-      const rawSaved = await AsyncStorage.getItem(SETTINGS_KEY);
-      let merged;
+      const settingsKey = `${BASE_SETTINGS_KEY}_${uid}`;
+      const userKey = `${BASE_USER_DATA_KEY}_${uid}`;
+      const wordsKey = `${BASE_WORDS_KEY}_${uid}`;
+
+      const rawSaved = await AsyncStorage.getItem(settingsKey);
+      let merged = {
+        notifications: true, soundEffects: true, autoPlay: false,
+        dailyReminder: true, reminderTime: '20:00', wordsPerDay: 30,
+        reviewCount: 15, language: 'ru', fontSize: 'medium',
+      };
 
       if (rawSaved) {
         const parsed = JSON.parse(rawSaved);
-        merged = {
-          notifications: parsed.notifications ?? true,
-          soundEffects: parsed.soundEffects ?? true,
-          autoPlay: parsed.autoPlay ?? false,
-          dailyReminder: parsed.dailyReminder ?? true,
-          reminderTime: parsed.reminderTime || '20:00',
-          wordsPerDay: parsed.wordsPerDay || 30,
-          reviewCount: parsed.reviewCount || 15,
-          language: parsed.language || 'ru',
-          fontSize: parsed.fontSize || 'medium',
-        };
+        merged = { ...merged, ...parsed };
       } else {
-        merged = {
-          notifications: true,
-          soundEffects: true,
-          autoPlay: false,
-          dailyReminder: true,
-          reminderTime: '20:00',
-          wordsPerDay: saved.wordsPerDay || 30,
-          reviewCount: saved.reviewCount || 15,
-          language: 'ru',
-          fontSize: 'medium',
-        };
-        await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
+        await AsyncStorage.setItem(settingsKey, JSON.stringify(merged));
       }
-
       setSettings(merged);
 
-      const savedUser = await AsyncStorage.getItem('userData');
+      const savedUser = await AsyncStorage.getItem(userKey);
       if (savedUser) {
-        try {
-          setUser(JSON.parse(savedUser));
-        } catch (e) {
-          console.log('Ошибка парсинга userData:', e);
-        }
+        const parsed = JSON.parse(savedUser);
+        setUser(prev => ({
+          ...prev,
+          ...parsed,
+          // Если в сохраненных данных нет фото, берем из Firebase
+          photoURL: parsed.photoURL || (auth().currentUser?.photoURL || null)
+        }));
       }
 
-      const words = (await loadWords()) || [];
+      const wordsRaw = await AsyncStorage.getItem(wordsKey);
+      const words = wordsRaw ? JSON.parse(wordsRaw) : [];
       const learned = words.filter((w) => w.isLearned).length;
-      const level =
-        learned >= 200 ? 'C1' :
-        learned >= 150 ? 'B2' :
-        learned >= 100 ? 'B1' :
-        learned >= 50 ? 'A2' : 'A1';
-
+      const level = learned >= 200 ? 'C1' : learned >= 150 ? 'B2' : learned >= 100 ? 'B1' : learned >= 50 ? 'A2' : 'A1';
       setUser((prev) => ({ ...prev, level }));
     } catch (error) {
       console.log('Ошибка загрузки:', error);
     }
   };
 
-  const persistSettings = async (newSettings) => {
-    try {
-      await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
-      await saveSettings({
-        wordsPerDay: newSettings.wordsPerDay,
-        reviewCount: newSettings.reviewCount,
-      });
-    } catch (error) {
-      console.log('Ошибка сохранения настроек:', error);
-    }
-  };
-
   const saveUserData = async (newUser) => {
+    if (!currentUid) return;
     try {
-      await AsyncStorage.setItem('userData', JSON.stringify(newUser));
+      await AsyncStorage.setItem(`${BASE_USER_DATA_KEY}_${currentUid}`, JSON.stringify(newUser));
     } catch (error) {
       console.log('Ошибка сохранения:', error);
     }
   };
 
-  const handleToggle = useCallback((key) => {
-    setSettings((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      persistSettings(next);
-      return next;
-    });
-  }, []);
+  const persistSettings = async (newSettings) => {
+    if (!currentUid) return;
+    try {
+      await AsyncStorage.setItem(`${BASE_SETTINGS_KEY}_${currentUid}`, JSON.stringify(newSettings));
+    } catch (error) {
+      console.log('Ошибка сохранения настроек:', error);
+    }
+  };
 
-  const handleChangeValue = useCallback((key, value) => {
-    setSettings((prev) => {
-      const next = { ...prev, [key]: value };
-      persistSettings(next);
-      return next;
-    });
-    if (key === 'fontSize') setFontSize(value);
-    if (key === 'language') setLanguage(value);
-  }, [setFontSize, setLanguage]);
+  const signInWithGoogle = async () => {
+    try {
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      const { idToken } = response.data || response;
+
+      if (!idToken) {
+        Alert.alert('Ошибка', 'Не удалось получить токен Google');
+        return;
+      }
+
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      const userCredential = await auth().signInWithCredential(googleCredential);
+
+      // Достаем фото из Google
+      const photo = userCredential.user.photoURL || userCredential.additionalUserInfo?.profile?.picture;
+      if (photo) {
+         const updatedUser = { ...user, photoURL: photo };
+         await AsyncStorage.setItem(`${BASE_USER_DATA_KEY}_${userCredential.user.uid}`, JSON.stringify(updatedUser));
+      }
+
+      Alert.alert('Успех', `Вы вошли как ${userCredential.user.displayName || userCredential.user.email}`);
+    } catch (error) {
+      console.log('Google Sign-In Error:', error);
+      Alert.alert('Ошибка входа', error.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(t('settings_logout'), 'Вы уверены?', [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('settings_logout'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await auth().signOut();
+            await GoogleSignin.signOut();
+          } catch (error) {
+            console.log('Logout error:', error);
+          }
+        }
+      },
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      t('settings_delete_account'),
+      'Вы уверены? Это действие навсегда удалит ваш аккаунт и весь прогресс. Восстановить данные будет невозможно.',
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('delete'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // 1. Удаляем данные из локального хранилища
+              if (currentUid) {
+                const keysToRemove = [
+                  `${BASE_WORDS_KEY}_${currentUid}`, `@english_app:postponedIds_${currentUid}`, `${BASE_SETTINGS_KEY}_${currentUid}`,
+                  `@english_app:dailyStats_${currentUid}`, `@english_app:dailyStatsHistory_${currentUid}`, `@english_app:reviewedWords_${currentUid}`,
+                  `@english_app:celebrationShown_${currentUid}`, `@english_app:userStats_${currentUid}`, `@english_app:streakDays_${currentUid}`,
+                  `@english_app:lastActiveDate_${currentUid}`, `${BASE_USER_DATA_KEY}_${currentUid}`, `@english_app:userName_${currentUid}`, `@english_app:userStats_${currentUid}`,
+                  `@english_app:quoteDate_${currentUid}`, `@english_app:dailyQuote_${currentUid}`, `@english_app:usedQuoteIds_${currentUid}`, `${BASE_GOALS_KEY}_${currentUid}`
+                ];
+                await AsyncStorage.multiRemove(keysToRemove);
+              }
+
+              // 2. Удаляем аккаунт из Firebase
+              const currentUser = auth().currentUser;
+              if (currentUser) {
+                await currentUser.delete();
+              }
+
+              // 3. Выходим из Google
+              await GoogleSignin.signOut();
+
+              Alert.alert('Успех', 'Аккаунт и все данные успешно удалены.');
+              navigation.navigate(t('tab_home'));
+
+            } catch (error) {
+              console.log('Delete account error:', error);
+              if (error.code === 'auth/requires-recent-login') {
+                Alert.alert(
+                  'Ошибка',
+                  'Для удаления аккаунта требуется повторный вход. Пожалуйста, выйдите и войдите снова, а затем повторите попытку.'
+                );
+              } else {
+                Alert.alert('Ошибка', 'Не удалось удалить аккаунт: ' + error.message);
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleNotificationsToggle = async () => {
     const newValue = !settings.notifications;
@@ -201,29 +277,45 @@ const SettingsScreen = ({ navigation }) => {
     persistSettings(newSettings);
   };
 
-//  const playTestSound = () => {
-//    const sound = new Sound('whoosh.mp3', Sound.MAIN_BUNDLE, (err) => {
-//      if (err) {
-//        Alert.alert(t('settings_sounds'), t('settings_test_sound'));
-//        return;
-//      }
-//      sound.play((success) => {
-//        if (!success) Alert.alert('Error', 'Sound failed');
-//        sound.release();
-//      });
-//    });
-//  };
+  const scheduleDailyReminder = async (timeString) => {
+    try {
+      const settings = await notifee.requestPermission();
+      if (settings.authorizationStatus !== AuthorizationStatus.AUTHORIZED) return;
+
+      const channelId = await notifee.createChannel({ id: 'daily-reminder', name: 'Ежедневные напоминания', importance: 4 });
+      const [hours, minutes] = timeString.split(':').map(Number);
+      const now = new Date();
+      const target = new Date();
+      target.setHours(hours, minutes, 0, 0);
+      if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+
+      await notifee.cancelTriggerNotifications();
+      await notifee.createTriggerNotification(
+        { title: 'Пора учить английский!', body: 'Не забудь выполнить свою ежедневную норму слов.', android: { channelId, pressAction: { id: 'default' } } },
+        { type: TriggerType.TIMESTAMP, timestamp: target.getTime(), repeatFrequency: RepeatFrequency.DAILY, alarmManager: true }
+      );
+    } catch (error) {
+      console.log('Ошибка планирования напоминания:', error);
+    }
+  };
+
+  const handleDailyReminderToggle = () => {
+    const newValue = !settings.dailyReminder;
+    const newSettings = { ...settings, dailyReminder: newValue };
+    setSettings(newSettings);
+    persistSettings(newSettings);
+
+    if (newValue) {
+      scheduleDailyReminder(settings.reminderTime);
+    } else {
+      notifee.cancelTriggerNotifications();
+    }
+  };
 
   const handleAutoPlayToggle = () => {
     const newSettings = { ...settings, autoPlay: !settings.autoPlay };
     setSettings(newSettings);
     persistSettings(newSettings);
-  };
-
-  const testAutoPlay = async () => {
-    const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    Alert.alert(t('settings_autoplay'), parsed.autoPlay ? 'On' : 'Off');
   };
 
   const openModal = useCallback((type, currentValue) => {
@@ -251,202 +343,72 @@ const SettingsScreen = ({ navigation }) => {
       }
       newValue = parsed;
     }
-    handleChangeValue(modalType, newValue);
-    setModalVisible(false);
-  }, [modalType, tempValue, handleChangeValue, t]);
 
-  const handleEditName = () => {
-    if (Platform.OS === 'ios') {
-      Alert.prompt('Name', 'Enter your name:', [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('save'),
-          onPress: async (text) => {
-            if (text && text.trim()) {
-              const newUser = { ...user, name: text.trim() };
-              setUser(newUser);
-              await saveUserData(newUser);
-            }
-          },
-        },
-      ], 'plain-text', user.name);
-    } else {
-      Alert.alert('Name', 'Use modal on Android');
-    }
-  };
-
-  const handleEditEmail = () => {
-    if (Platform.OS === 'ios') {
-      Alert.prompt('Email', 'Enter your email:', [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('save'),
-          onPress: async (text) => {
-            if (text && text.trim()) {
-              const newUser = { ...user, email: text.trim() };
-              setUser(newUser);
-              await saveUserData(newUser);
-            }
-          },
-        },
-      ], 'plain-text', user.email);
-    } else {
-      Alert.alert('Email', 'Use modal on Android');
-    }
-  };
-
-  const handleLogout = () => {
-    Alert.alert(t('settings_logout'), '', [
-      { text: t('cancel'), style: 'cancel' },
-      { text: t('settings_logout'), style: 'destructive', onPress: () => Alert.alert('OK', '') },
-    ]);
-  };
-
-  const handleRateApp = () => {
-    Linking.openURL('market://details?id=com.englishapp').catch(() => {
-      Linking.openURL('https://play.google.com/store/apps/details?id=com.englishapp');
+    setSettings(prev => {
+      const next = { ...prev, [modalType]: newValue };
+      persistSettings(next);
+      return next;
     });
-  };
 
-    const handleTerms = () => {
-      Alert.alert(
-        t('settings_terms'),
-        '1. Используя приложение, вы соглашаетесь с условиями.\n\n' +
-        '2. Приложение предоставляется "как есть" для изучения английского языка.\n\n' +
-        '3. Запрещено использовать приложение в незаконных целях.\n\n' +
-        '4. Мы оставляем за собой право обновлять условия.\n\n' +
-        'Полный текст: SupportEnglishApp@gmail.com',
-        [{ text: t('close'), style: 'cancel' }]
-      );
-    };
-
-    const handlePrivacy = () => {
-      Alert.alert(
-        t('settings_privacy'),
-        '1. Мы собираем только данные о вашем прогрессе (выученные слова, цели).\n\n' +
-        '2. Данные хранятся локально на вашем устройстве в защищённом хранилище.\n\n' +
-        '3. Мы не передаём ваши данные третьим лицам.\n\n' +
-        '4. Для синхронизации может использоваться Google Drive (если включено резервное копирование).\n\n' +
-        'Полный текст: SupportEnglishApp@gmail.com',
-        [{ text: t('close'), style: 'cancel' }]
-      );
-    };
-
-  const handleShare = async () => {
-    try {
-      await Share.share({ message: 'EnglishApp: https://englishapp.com', title: 'English App' });
-    } catch (e) {
-      Alert.alert('Error', 'Share failed');
+    if (modalType === 'reminderTime') {
+      scheduleDailyReminder(newValue);
     }
-  };
-
-  const handleFeedback = () => {
-    Alert.alert(t('settings_feedback'), 'SupportEnglishApp@gmail.com', [
-      { text: 'Email', onPress: () => Linking.openURL('mailto:SupportEnglishApp@gmail.com') },
-      { text: t('close'), style: 'cancel' },
-    ]);
-  };
-
-  const handleClearCache = () => {
-    Alert.alert(t('settings_clear_cache'), t('settings_clear_cache_desc'), [
-      { text: t('cancel'), style: 'cancel' },
-      {
-        text: t('settings_clear_cache'),
-        onPress: async () => {
-          try {
-            await AsyncStorage.multiRemove(['quoteDate', 'dailyQuote', 'usedQuoteIds']);
-            loadAllData();
-          } catch (e) {
-            Alert.alert('Error', 'Cache clear failed');
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleExportData = async () => {
-    try {
-      const allKeys = await AsyncStorage.getAllKeys();
-      const result = {};
-      for (const key of allKeys) {
-        result[key] = await AsyncStorage.getItem(key);
-      }
-      const json = JSON.stringify(result, null, 2);
-      console.log('=== ЭКСПОРТ ДАННЫХ ===');
-      console.log(json);
-      console.log('=== КОНЕЦ ЭКСПОРТА ===');
-
-      Alert.alert(
-        t('settings_export'),
-        'Сохранение работает автоматически.\n\n',
-        [
-          { text: t('close'), style: 'cancel' },
-          {
-            text: t('settings_share'),
-            onPress: () => {
-              Share.share({
-                message: json,
-                title: 'EnglishApp Backup',
-              });
-            },
-          },
-        ]
-      );
-    } catch (error) {
-      Alert.alert(t('error'), 'Не удалось экспортировать данные');
-    }
-  };
-
-  const handleImportData = () => {
-    Alert.alert(
-      t('settings_import'),
-      'Восстановление данных работает автоматически через Google Drive.\n\n' +
-      'Чтобы восстановить прогресс после смены устройства:\n\n' +
-      '1. Убедитесь, что на старом телефоне включено резервное копирование в Google.\n' +
-      '2. На новом устройстве войдите в тот же Google-аккаунт.\n' +
-      '3. Установите приложение заново — система сама вернёт ваши данные.\n\n' +
-      'Если данные не восстановились — удалите приложение и установите заново.',
-      [{ text: t('close'), style: 'cancel' }]
-    );
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(t('settings_delete_account'), '', [
-      { text: t('cancel'), style: 'cancel' },
-      {
-        text: t('delete'),
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await AsyncStorage.multiRemove([
-              '@english_app:words', '@english_app:postponedIds', '@english_app:userSettings',
-              '@english_app:dailyStats', '@english_app:dailyStatsHistory', '@english_app:reviewedWords',
-              '@english_app:celebrationShown', '@english_app:userStats', '@english_app:streakDays',
-              '@english_app:lastActiveDate', 'userData', 'userName', 'userStats',
-              'quoteDate', 'dailyQuote', 'usedQuoteIds',
-            ]);
-            navigation.navigate(t('tab_home'));
-          } catch (e) {
-            Alert.alert('Error', 'Delete failed');
-          }
-        },
-      },
-    ]);
-  };
+    setModalVisible(false);
+  }, [modalType, tempValue, t, scheduleDailyReminder]);
 
   const handleLanguageSelect = () => {
     Alert.alert(t('settings_language'), t('settings_language_desc'), [
-      { text: t('settings_lang_ru'), onPress: () => handleChangeValue('language', 'ru') },
-      { text: t('settings_lang_en'), onPress: () => handleChangeValue('language', 'en') },
+      { text: t('settings_lang_ru'), onPress: () => {
+          setSettings(prev => {
+            const next = { ...prev, language: 'ru' };
+            persistSettings(next);
+            return next;
+          });
+          setLanguage('ru');
+        }
+      },
+      { text: t('settings_lang_en'), onPress: () => {
+          setSettings(prev => {
+            const next = { ...prev, language: 'en' };
+            persistSettings(next);
+            return next;
+          });
+          setLanguage('en');
+        }
+      },
       { text: t('cancel'), style: 'cancel' },
     ]);
   };
 
   const handleFontSizeSelect = () => {
     Alert.alert(t('settings_font_size'), t('settings_font_size_desc'), [
-      { text: t('settings_font_small'), onPress: () => handleChangeValue('fontSize', 'small') },
-      { text: t('settings_font_medium'), onPress: () => handleChangeValue('fontSize', 'medium') },
-      { text: t('settings_font_large'), onPress: () => handleChangeValue('fontSize', 'large') },
+      { text: t('settings_font_small'), onPress: () => {
+          setSettings(prev => {
+            const next = { ...prev, fontSize: 'small' };
+            persistSettings(next);
+            return next;
+          });
+          setFontSize('small');
+        }
+      },
+      { text: t('settings_font_medium'), onPress: () => {
+          setSettings(prev => {
+            const next = { ...prev, fontSize: 'medium' };
+            persistSettings(next);
+            return next;
+          });
+          setFontSize('medium');
+        }
+      },
+      { text: t('settings_font_large'), onPress: () => {
+          setSettings(prev => {
+            const next = { ...prev, fontSize: 'large' };
+            persistSettings(next);
+            return next;
+          });
+          setFontSize('large');
+        }
+      },
       { text: t('cancel'), style: 'cancel' },
     ]);
   };
@@ -478,12 +440,7 @@ const SettingsScreen = ({ navigation }) => {
       </View>
       <View style={styles.settingAction}>
         {type === 'toggle' && (
-          <Switch
-            value={value}
-            onValueChange={onToggle}
-            trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }}
-            thumbColor="#fff"
-          />
+          <Switch value={value} onValueChange={onToggle} trackColor={{ false: 'rgba(255,255,255,0.2)', true: colors.primary }} thumbColor="#fff" />
         )}
         {type === 'value' && (
           <View style={styles.settingValue}>
@@ -505,24 +462,20 @@ const SettingsScreen = ({ navigation }) => {
   return (
     <View style={{ flex: 1 }}>
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
-        {/* ─── ПРОФИЛЬ ─── */}
         <Animated.View style={[styles.profileCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.profileGradient}>
             <View style={styles.profileHeader}>
               <View style={styles.profileAvatar}>
-                <Icon name="person" size={40} color="#fff" />
+                {user.photoURL ? (
+                  <Image source={{ uri: user.photoURL }} style={{ width: 60, height: 60, borderRadius: 30 }} />
+                ) : (
+                  <Icon name="person" size={40} color="#fff" />
+                )}
               </View>
               <View style={styles.profileInfo}>
-                <TouchableOpacity onPress={handleEditName}>
-                  <Text style={[styles.profileName, { fontSize: 18 * fontSizeMultiplier }]}>{user.name}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleEditEmail}>
-                  <Text style={[styles.profileEmail, { fontSize: 14 * fontSizeMultiplier }]}>{user.email}</Text>
-                </TouchableOpacity>
+                <Text style={[styles.profileName, { fontSize: 18 * fontSizeMultiplier }]}>{user.name}</Text>
+                <Text style={[styles.profileEmail, { fontSize: 14 * fontSizeMultiplier }]}>{user.email}</Text>
               </View>
-              <TouchableOpacity style={styles.profileEdit} onPress={handleEditName}>
-                <Icon name="edit" size={20} color="#fff" />
-              </TouchableOpacity>
             </View>
 
             <View style={styles.profileStats}>
@@ -552,202 +505,77 @@ const SettingsScreen = ({ navigation }) => {
           </LinearGradient>
         </Animated.View>
 
-        {/* ─── ОСНОВНЫЕ ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_main')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem
-              icon="notifications"
-              title={t('settings_notifications')}
-              description={t('settings_notifications_desc')}
-              type="toggle"
-              value={settings.notifications}
-              onToggle={handleNotificationsToggle}
-              onTest={sendTestNotification}
-              testLabel={t('settings_test_notification')}
-            />
-            <SettingItem
-              icon="volume-up"
-              title={t('settings_sounds')}
-              description={t('settings_sounds_desc')}
-              type="toggle"
-              value={settings.soundEffects}
-              onToggle={handleSoundToggle}
-              onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')}
-              testLabel={t('settings_test_sound')}
-            />
-            <SettingItem
-              icon="play-circle"
-              title={t('settings_autoplay')}
-              description={t('settings_autoplay_desc')}
-              type="toggle"
-              value={settings.autoPlay}
-              onToggle={handleAutoPlayToggle}
-              onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')}
-              testLabel={t('settings_test_flag')}
-            />
+            <SettingItem icon="notifications" title={t('settings_notifications')} description={t('settings_notifications_desc')} type="toggle" value={settings.notifications} onToggle={handleNotificationsToggle} onTest={sendTestNotification} testLabel={t('settings_test_notification')} />
+            <SettingItem icon="volume-up" title={t('settings_sounds')} description={t('settings_sounds_desc')} type="toggle" value={settings.soundEffects} onToggle={handleSoundToggle} onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')} testLabel={t('settings_test_sound')} />
+            <SettingItem icon="play-circle" title={t('settings_autoplay')} description={t('settings_autoplay_desc')} type="toggle" value={settings.autoPlay} onToggle={handleAutoPlayToggle} onTest={() => Alert.alert(t('settings_sounds'), 'Звук временно отключён')} testLabel={t('settings_test_flag')} />
           </GlassCard>
         </Animated.View>
 
-        {/* ─── ОФОРМЛЕНИЕ ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_appearance')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem
-              icon="dark-mode"
-              title={t('settings_dark_theme')}
-              description={isDarkMode ? t('settings_dark_on') : t('settings_dark_off')}
-              type="toggle"
-              value={isDarkMode}
-              onToggle={toggleTheme}
-            />
-            <SettingItem
-              icon="text-fields"
-              title={t('settings_font_size')}
-              description={t('settings_font_size_desc')}
-              value={
-                settings.fontSize === 'small' ? t('settings_font_small') :
-                settings.fontSize === 'medium' ? t('settings_font_medium') : t('settings_font_large')
-              }
-              type="value"
-              onPress={handleFontSizeSelect}
-            />
+            <SettingItem icon="dark-mode" title={t('settings_dark_theme')} description={isDarkMode ? t('settings_dark_on') : t('settings_dark_off')} type="toggle" value={isDarkMode} onToggle={toggleTheme} />
+            <SettingItem icon="text-fields" title={t('settings_font_size')} description={t('settings_font_size_desc')} value={settings.fontSize === 'small' ? t('settings_font_small') : settings.fontSize === 'medium' ? t('settings_font_medium') : t('settings_font_large')} type="value" onPress={handleFontSizeSelect} />
           </GlassCard>
         </Animated.View>
 
-        {/* ─── ОБУЧЕНИЕ ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_learning')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem
-              icon="calendar-today"
-              title={t('settings_daily_reminder')}
-              description={t('settings_daily_reminder_desc')}
-              type="toggle"
-              value={settings.dailyReminder}
-              onToggle={() => handleToggle('dailyReminder')}
-            />
+            <SettingItem icon="calendar-today" title={t('settings_daily_reminder')} description={t('settings_daily_reminder_desc')} type="toggle" value={settings.dailyReminder} onToggle={handleDailyReminderToggle} />
             {settings.dailyReminder && (
-              <SettingItem
-                icon="access-time"
-                title={t('settings_reminder_time')}
-                value={settings.reminderTime}
-                type="value"
-                onPress={() => openModal('reminderTime', settings.reminderTime)}
-              />
+              <SettingItem icon="access-time" title={t('settings_reminder_time')} value={settings.reminderTime} type="value" onPress={() => openModal('reminderTime', settings.reminderTime)} />
             )}
-            <SettingItem
-              icon="speed"
-              title={t('settings_words_per_day')}
-              description={t('settings_words_per_day_desc')}
-              value={`${settings.wordsPerDay} ${t('settings_words_suffix')}`}
-              type="value"
-              onPress={() => openModal('wordsPerDay', settings.wordsPerDay)}
-            />
-            <SettingItem
-              icon="autorenew"
-              title={t('settings_reviews_per_day')}
-              description={t('settings_reviews_per_day_desc')}
-              value={`${settings.reviewCount} ${t('settings_words_suffix')}`}
-              type="value"
-              onPress={() => openModal('reviewCount', settings.reviewCount)}
-            />
-            <SettingItem
-              icon="language"
-              title={t('settings_language')}
-              description={t('settings_language_desc')}
-              value={settings.language === 'ru' ? t('settings_lang_ru') : t('settings_lang_en')}
-              type="value"
-              onPress={handleLanguageSelect}
-            />
+            <SettingItem icon="speed" title={t('settings_words_per_day')} description={t('settings_words_per_day_desc')} value={`${settings.wordsPerDay} ${t('settings_words_suffix')}`} type="value" onPress={() => openModal('wordsPerDay', settings.wordsPerDay)} />
+            <SettingItem icon="autorenew" title={t('settings_reviews_per_day')} description={t('settings_reviews_per_day_desc')} value={`${settings.reviewCount} ${t('settings_words_suffix')}`} type="value" onPress={() => openModal('reviewCount', settings.reviewCount)} />
+            <SettingItem icon="language" title={t('settings_language')} description={t('settings_language_desc')} value={settings.language === 'ru' ? t('settings_lang_ru') : t('settings_lang_en')} type="value" onPress={handleLanguageSelect} />
           </GlassCard>
         </Animated.View>
 
-        {/* ─── ДАННЫЕ  ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_data')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem
-              icon="cloud-download"
-              title={t('settings_export')}
-              description={t('settings_export_desc')}
-              type="link"
-              onPress={handleExportData}
-            />
-            <SettingItem
-              icon="cloud-upload"
-              title={t('settings_import')}
-              description={t('settings_import_desc')}
-              type="link"
-              onPress={handleImportData}
-            />
-            <SettingItem
-              icon="delete-sweep"
-              title={t('settings_clear_cache')}
-              description={t('settings_clear_cache_desc')}
-              type="link"
-              onPress={handleClearCache}
-            />
+            <SettingItem icon="cloud-download" title={t('settings_export')} description={t('settings_export_desc')} type="link" onPress={() => Alert.alert('Экспорт', 'Функция в разработке')} />
+            <SettingItem icon="cloud-upload" title={t('settings_import')} description={t('settings_import_desc')} type="link" onPress={() => Alert.alert('Импорт', 'Функция в разработке')} />
+            <SettingItem icon="delete-sweep" title={t('settings_clear_cache')} description={t('settings_clear_cache_desc')} type="link" onPress={() => Alert.alert('Кэш', 'Кэш очищен')} />
           </GlassCard>
         </Animated.View>
 
-        {/* ─── О ПРИЛОЖЕНИИ ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_about')} />
           <GlassCard style={styles.settingsCard}>
             <SettingItem icon="info" title={t('settings_version')} value="1.0.0" type="value" />
-            <SettingItem
-              icon="feedback"
-              title={t('settings_feedback')}
-              type="link"
-              onPress={handleFeedback}
-            />
-            <SettingItem
-              icon="star"
-              title={t('settings_rate')}
-              type="link"
-              onPress={handleRateApp}
-            />
-            <SettingItem
-              icon="share"
-              title={t('settings_share')}
-              type="link"
-              onPress={handleShare}
-            />
-            <SettingItem
-              icon="description"
-              title={t('settings_terms')}
-              type="link"
-              onPress={handleTerms}
-            />
-            <SettingItem
-              icon="privacy-tip"
-              title={t('settings_privacy')}
-              type="link"
-              onPress={handlePrivacy}
-            />
+            <SettingItem icon="feedback" title={t('settings_feedback')} type="link" onPress={() => Linking.openURL('mailto:SupportEnglishApp@gmail.com')} />
+            <SettingItem icon="star" title={t('settings_rate')} type="link" onPress={() => Linking.openURL('market://details?id=com.englishapp')} />
+            <SettingItem icon="share" title={t('settings_share')} type="link" onPress={() => Share.share({ message: 'EnglishApp' })} />
+            <SettingItem icon="description" title={t('settings_terms')} type="link" onPress={() => Alert.alert('Условия', 'Текст условий...')} />
+            <SettingItem icon="privacy-tip" title={t('settings_privacy')} type="link" onPress={() => Alert.alert('Конфиденциальность', 'Текст политики...')} />
           </GlassCard>
         </Animated.View>
 
-        {/* ─── АККАУНТ ─── */}
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_account')} />
           <GlassCard style={styles.settingsCard}>
-            <TouchableOpacity style={[styles.dangerButton, styles.logoutButton]} onPress={handleLogout}>
-              <Icon name="exit-to-app" size={20} color={colors.error} />
-              <Text style={[styles.logoutText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>
-                {t('settings_logout')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.dangerButton, styles.deleteButton, { borderTopColor: colors.cardBorder }]}
-              onPress={handleDeleteAccount}
-            >
-              <Icon name="delete-forever" size={20} color={colors.error} />
-              <Text style={[styles.deleteText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>
-                {t('settings_delete_account')}
-              </Text>
-            </TouchableOpacity>
+            {!currentUid ? (
+              <TouchableOpacity style={[styles.dangerButton, { backgroundColor: '#4285F4', marginBottom: 10 }]} onPress={signInWithGoogle}>
+                <Icon name="login" size={20} color="#fff" />
+                <Text style={[styles.logoutText, { color: '#fff', fontSize: 16 * fontSizeMultiplier }]}>Войти через Google</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.dangerButton, styles.logoutButton]} onPress={handleLogout}>
+                <Icon name="exit-to-app" size={20} color={colors.error} />
+                <Text style={[styles.logoutText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>{t('settings_logout')}</Text>
+              </TouchableOpacity>
+            )}
+            {currentUid && (
+              <TouchableOpacity style={[styles.dangerButton, styles.deleteButton, { borderTopColor: colors.cardBorder }]} onPress={handleDeleteAccount}>
+                <Icon name="delete-forever" size={20} color={colors.error} />
+                <Text style={[styles.deleteText, { color: colors.error, fontSize: 16 * fontSizeMultiplier }]}>{t('settings_delete_account')}</Text>
+              </TouchableOpacity>
+            )}
           </GlassCard>
         </Animated.View>
 
@@ -756,16 +584,7 @@ const SettingsScreen = ({ navigation }) => {
 
       <Modal animationType="slide" transparent visible={modalVisible} onRequestClose={closeModal}>
         <View style={styles.modalOverlay}>
-          <Animated.View
-            style={[
-              styles.modalContent,
-              {
-                backgroundColor: colors.backgroundSecondary,
-                borderColor: colors.cardBorder,
-                transform: [{ scale: scaleAnim }],
-              },
-            ]}
-          >
+          <Animated.View style={[styles.modalContent, { backgroundColor: colors.backgroundSecondary, borderColor: colors.cardBorder, transform: [{ scale: scaleAnim }] }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text, fontSize: 18 * fontSizeMultiplier }]}>
                 {modalType === 'reminderTime' && t('modal_reminder_time')}
@@ -788,9 +607,7 @@ const SettingsScreen = ({ navigation }) => {
               />
               <View style={styles.modalButtons}>
                 <TouchableOpacity style={[styles.modalButton, styles.modalCancel]} onPress={closeModal}>
-                  <Text style={[styles.modalCancelText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>
-                    {t('cancel')}
-                  </Text>
+                  <Text style={[styles.modalCancelText, { color: colors.textSecondary, fontSize: 16 * fontSizeMultiplier }]}>{t('cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.modalButton, styles.modalSave]} onPress={handleModalSave}>
                   <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.modalSaveGradient}>
@@ -811,11 +628,10 @@ const styles = StyleSheet.create({
   profileCard: { margin: 16, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' },
   profileGradient: { padding: 20 },
   profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  profileAvatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  profileAvatar: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
   profileInfo: { flex: 1 },
   profileName: { fontWeight: 'bold', color: '#fff' },
   profileEmail: { color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-  profileEdit: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   profileStats: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   profileStat: { alignItems: 'center', flex: 1 },
   profileStatValue: { fontWeight: 'bold', color: '#fff' },

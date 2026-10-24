@@ -13,6 +13,7 @@ import SvgChart, { SVGRenderer } from '@wuba/react-native-echarts/svgChart';
 import * as echarts from 'echarts/core';
 import { GraphChart } from 'echarts/charts';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth'; // <-- ДОБАВЛЕНО
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
 
@@ -42,7 +43,7 @@ const DEFAULT_SETTINGS = {
   edgeLength: 120,
 };
 
-const STORAGE_KEY = '@graph_data_v1';
+const BASE_STORAGE_KEY = '@graph_data_v1';
 
 export default function KnowledgeGraphScreen() {
   const { colors, isDarkMode, fontSizeMultiplier } = useTheme();
@@ -50,6 +51,7 @@ export default function KnowledgeGraphScreen() {
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
 
+  const [currentUid, setCurrentUid] = useState(null); // <-- ДОБАВЛЕНО
   const [nodes, setNodes] = useState(DEFAULT_NODES);
   const [links, setLinks] = useState(DEFAULT_LINKS);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
@@ -67,31 +69,62 @@ export default function KnowledgeGraphScreen() {
   const labelColor = colors.text;
   const nodeBorderColor = colors.primary;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed.nodes) setNodes(parsed.nodes);
-          if (parsed.links) setLinks(parsed.links);
-          if (parsed.settings) setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
-        }
-      } catch (e) {
-        console.warn('Failed to load graph:', e);
-      } finally {
-        setLoaded(true);
-      }
-    })();
-  }, []);
+  // Функция для получения правильного ключа
+  const getStorageKey = useCallback(() => {
+    return currentUid ? `${BASE_STORAGE_KEY}_${currentUid}` : `${BASE_STORAGE_KEY}_guest`;
+  }, [currentUid]);
 
-  const save = useCallback(async (n, l, s) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes: n, links: l, settings: s }));
-    } catch (e) {
-      console.warn('Failed to save graph:', e);
-    }
-  }, []);
+
+    useEffect(() => {
+      const subscriber = auth().onAuthStateChanged(async (user) => {
+        const uid = user ? user.uid : null;
+        setCurrentUid(uid);
+
+        if (!uid) {
+          setLoaded(true);
+          return;
+        }
+
+        const storageKey = `${BASE_STORAGE_KEY}_${uid}`;
+
+        try {
+          const raw = await AsyncStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            // Проверка на старые данные (например, если узлов больше 5)
+            if (parsed.nodes && parsed.nodes.length > 5) {
+               setNodes(DEFAULT_NODES);
+               setLinks(DEFAULT_LINKS);
+               setSettings(DEFAULT_SETTINGS);
+            } else {
+               if (parsed.nodes) setNodes(parsed.nodes);
+               if (parsed.links) setLinks(parsed.links);
+               if (parsed.settings) setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
+            }
+          } else {
+            setNodes(DEFAULT_NODES);
+            setLinks(DEFAULT_LINKS);
+            setSettings(DEFAULT_SETTINGS);
+          }
+        } catch (e) {
+          console.warn('Failed to load graph:', e);
+        } finally {
+          setLoaded(true);
+        }
+      });
+      return subscriber;
+    }, []);
+
+    // Сохранение данных (использует актуальный UID)
+    const save = useCallback(async (n, l, s) => {
+      if (!currentUid) return;
+      try {
+        const storageKey = `${BASE_STORAGE_KEY}_${currentUid}`;
+        await AsyncStorage.setItem(storageKey, JSON.stringify({ nodes: n, links: l, settings: s }));
+      } catch (e) {
+        console.warn('Failed to save graph:', e);
+      }
+    }, [currentUid]);
 
   const buildOption = useCallback(
     (n, l, s) => ({
