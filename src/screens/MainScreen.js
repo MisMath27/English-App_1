@@ -55,6 +55,7 @@ const MainScreen = ({ navigation }) => {
 
         if (currentUidRef.current !== uid) {
           setVocabularySize({ total: 0, learned: 0, inProgress: 0, toReview: 0 });
+          setChartData(null); // Сбрасываем график перед загрузкой
           currentUidRef.current = uid;
           setCurrentUid(uid);
 
@@ -123,55 +124,64 @@ const MainScreen = ({ navigation }) => {
     }
   };
 
-    const loadUserData = async (uid) => {
-      try {
-        if (!uid) {
-          setLoading(false);
-          return;
-        }
-
-        setLoading(true);
-
-        const userNameKey = `@english_app:userName_${uid}`;
-        const savedName = await AsyncStorage.getItem(userNameKey);
-        if (savedName) setUserName(savedName);
-        else if (auth().currentUser) setUserName(auth().currentUser.displayName || '');
-
-        const wordsKey = `@english_app:words_${uid}`;
-        const rawWords = await AsyncStorage.getItem(wordsKey);
-
-        let words = [];
-        if (rawWords) {
-          words = JSON.parse(rawWords);
-          // Проверка на старые данные
-          if (words.length !== 9894) {
-              const WORDS_JSON = require('../data/words_with_translation.json');
-              words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
-                ...item, isLearned: false
-              }));
-              await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
-          }
-        } else {
-          const WORDS_JSON = require('../data/words_with_translation.json');
-          words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
-            ...item, isLearned: false
-          }));
-          await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
-        }
-
-        const total = words.length;
-        const learned = words.filter(w => w.isLearned).length;
-        const inProgress = words.filter(w => w.reviewCount > 0 && !w.isLearned).length;
-
-        setVocabularySize({ total, learned, inProgress, toReview: learned });
-
-        // ... (статистика)
-      } catch (error) {
-        console.error('Error loading data:', error);
-      } finally {
+  const loadUserData = async (uid) => {
+    try {
+      if (!uid) {
         setLoading(false);
+        return;
       }
-    };
+
+      setLoading(true);
+
+      const userNameKey = `@english_app:userName_${uid}`;
+      const savedName = await AsyncStorage.getItem(userNameKey);
+      if (savedName) setUserName(savedName);
+      else if (auth().currentUser) setUserName(auth().currentUser.displayName || '');
+
+      const wordsKey = `@english_app:words_${uid}`;
+      const rawWords = await AsyncStorage.getItem(wordsKey);
+
+      let words = [];
+      if (rawWords) {
+        words = JSON.parse(rawWords);
+        // Проверка на старые данные (если массив не совпадает с размером базы)
+        if (words.length !== 7880 && words.length !== 9894) {
+            const WORDS_JSON = require('../data/words_with_translation.json');
+            words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
+              ...item, isLearned: false
+            }));
+            await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+        }
+      } else {
+        const WORDS_JSON = require('../data/words_with_translation.json');
+        words = WORDS_JSON.filter(item => item.translation && item.translation.trim() !== '').map(item => ({
+          ...item, isLearned: false
+        }));
+        await AsyncStorage.setItem(wordsKey, JSON.stringify(words));
+      }
+
+      const total = words.length;
+      const learned = words.filter(w => w.isLearned).length;
+      const inProgress = words.filter(w => w.reviewCount > 0 && !w.isLearned).length;
+
+      setVocabularySize({ total, learned, inProgress, toReview: learned });
+
+      const statsKey = `@english_app:userStats_${uid}`;
+      const rawStats = await AsyncStorage.getItem(statsKey);
+      const stats = rawStats ? JSON.parse(rawStats) : {};
+      setUserData({
+        streakDays: stats.streakDays || 0,
+        accuracy: stats.accuracy || 0,
+        weeklyProgress: stats.weeklyProgress || 0,
+      });
+
+      await generateRealChartData(selectedPeriod, uid);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const generateRealChartData = async (period, uid) => {
     try {
@@ -185,7 +195,7 @@ const MainScreen = ({ navigation }) => {
       let reviewedData = [];
 
       if (period === 'week') {
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
         for (let i = 6; i >= 0; i--) {
           const d = new Date(today);
           d.setDate(d.getDate() - i);
@@ -205,12 +215,12 @@ const MainScreen = ({ navigation }) => {
             totalLearned += history[key]?.learned || 0;
             totalReviewed += history[key]?.reviewed || 0;
           }
-          labels.push(`${4 - w}w`);
+          labels.push(`${4 - w} нед`);
           learnedData.push(totalLearned);
           reviewedData.push(totalReviewed);
         }
       } else {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthNames = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
         for (let m = 5; m >= 0; m--) {
           const d = new Date(today.getFullYear(), today.getMonth() - m, 1);
           let totalLearned = 0;
@@ -227,17 +237,25 @@ const MainScreen = ({ navigation }) => {
         }
       }
 
+      // Проверяем, есть ли вообще данные для отрисовки
       const hasData = learnedData.some(v => v > 0) || reviewedData.some(v => v > 0);
+
+      if (!hasData) {
+        setChartData({ labels, datasets: [], isEmpty: true });
+        return;
+      }
 
       setChartData({
         labels,
         datasets: [
-          { data: hasData ? learnedData : learnedData.map(() => 0), color: (o = 1) => `rgba(76, 175, 80, ${o})` },
-          { data: hasData ? reviewedData : reviewedData.map(() => 0), color: (o = 1) => `rgba(33, 150, 243, ${o})` },
+          { data: learnedData, color: (o = 1) => `rgba(76, 175, 80, ${o})` },
+          { data: reviewedData, color: (o = 1) => `rgba(33, 150, 243, ${o})` },
         ],
+        isEmpty: false,
       });
     } catch (error) {
       console.log('Error generating chart:', error);
+      setChartData(null);
     }
   };
 
@@ -396,39 +414,66 @@ const MainScreen = ({ navigation }) => {
               </View>
             </View>
 
-            {chartData && chartData.labels && chartData.labels.length > 0 && (
-              <Animated.View style={{ transform: [{ scale: progressAnim }] }}>
-                <BarChart
-                  data={{ labels: chartData.labels, datasets: chartData.datasets }}
-                  width={width - 64}
-                  height={220}
-                  chartConfig={{
-                    backgroundColor: colors.backgroundSecondary,
-                    backgroundGradientFrom: colors.backgroundSecondary,
-                    backgroundGradientTo: colors.backgroundSecondary,
-                    decimalPlaces: 0,
-                    color: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
-                    labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
-                    style: { borderRadius: 16 },
-                    barPercentage: 0.6,
-                  }}
-                  style={styles.chart}
-                  showValuesOnTopOfBars
-                  fromZero
-                />
-              </Animated.View>
-            )}
+                        {chartData && chartData.isEmpty ? (
+                          <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+                             <Icon name="insert-chart-outlined" size={40} color={colors.textMuted} />
+                             <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 14 }}>
+                               Нет данных за выбранный период
+                             </Text>
+                          </View>
+                        ) : chartData && chartData.datasets && chartData.datasets.length > 0 ? (
+                          <Animated.View style={{ transform: [{ scale: progressAnim }] }}>
+                            <BarChart
+                              data={{
+                                labels: chartData.labels,
+                                datasets: [
+                                  {
+                                    data: chartData.datasets[0].data, // Выучено
+                                    color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})` // Зеленый
+                                  },
+                                  {
+                                    data: chartData.datasets[1].data, // Повторено
+                                    color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})` // Оранжевый
+                                  },
+                                ]
+                              }}
+                              width={width - 64}
+                              height={220}
+                              chartConfig={{
+                                backgroundColor: colors.backgroundSecondary,
+                                backgroundGradientFrom: colors.backgroundSecondary,
+                                backgroundGradientTo: colors.backgroundSecondary,
+                                decimalPlaces: 0,
+                                color: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
+                                labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.6})`,
+                                style: { borderRadius: 16 },
+                                barPercentage: 0.6,
+                              }}
+                              style={styles.chart}
+                              showValuesOnTopOfBars
+                              fromZero
+                              withInnerLines={true}
+                              // ВОТ ЭТА СТРОКА ДЕЛАЕТ ИХ СТЕКОВЫМИ (друг на друге)
+                              // Если хотите, чтобы они стояли рядом (группированно), удалите эту строку
+                              stacked={false}
+                            />
+                          </Animated.View>
+                        ) : (
+                          <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+                             <Text style={{ color: colors.textSecondary }}>Загрузка графика...</Text>
+                          </View>
+                        )}
 
-            <View style={styles.chartLegend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} />
-                <Text style={[styles.legendText, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_learned_chart')}</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: '#2196F3' }]} />
-                <Text style={[styles.legendText, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_reviewed_chart')}</Text>
-              </View>
-            </View>
+                        <View style={styles.chartLegend}>
+                          <View style={styles.legendItem}>
+                            <View style={[styles.legendDot, { backgroundColor: '#4CAF50' }]} />
+                            <Text style={[styles.legendText, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_learned_chart')}</Text>
+                          </View>
+                          <View style={styles.legendItem}>
+                            <View style={[styles.legendDot, { backgroundColor: '#FF9800' }]} />
+                            <Text style={[styles.legendText, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_reviewed_chart')}</Text>
+                          </View>
+                        </View>
           </GlassCard>
 
           <GlassCard style={styles.statsCard}>

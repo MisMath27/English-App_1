@@ -326,10 +326,20 @@ const LearnScreen = ({ route, navigation }) => {
         await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, learned: newLearned }));
         setTodayLearned(newLearned);
 
+        const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
+                const rawHistory = await AsyncStorage.getItem(historyKey);
+                const history = rawHistory ? JSON.parse(rawHistory) : {};
+                const todayString = new Date().toDateString();
+
+                if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
+                history[todayString].learned += 1;
+
+                await AsyncStorage.setItem(historyKey, JSON.stringify(history));
+
         if (newLearned >= wordsPerDay && !celebrationShown) {
           setCelebrationShown(true);
           await AsyncStorage.setItem(`@english_app:celebrationShown_${activeUid}`, 'true');
-          showCelebrationAnimation(`🎉 ${wordsPerDay}`);
+          showCelebrationAnimation(`${wordsPerDay}`);
         }
         const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
         setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
@@ -362,6 +372,17 @@ const LearnScreen = ({ route, navigation }) => {
           const daily = rawDaily ? JSON.parse(rawDaily) : {};
           await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, reviewed: newReviewed.length }));
           setTodayReviewed(newReviewed.length);
+
+          const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
+                    const rawHistory = await AsyncStorage.getItem(historyKey);
+                    const history = rawHistory ? JSON.parse(rawHistory) : {};
+                    const todayString = new Date().toDateString();
+
+                    if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
+                    history[todayString].reviewed += 1;
+
+                    await AsyncStorage.setItem(historyKey, JSON.stringify(history));
+
         }
         const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
         setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
