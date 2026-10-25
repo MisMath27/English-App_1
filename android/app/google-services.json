@@ -12,7 +12,24 @@
           "package_name": "com.englishapp"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "324567874490-k8tmv5gi8mbjfjbvl9t33urpkp6cu1ee.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.englishapp",
+            "certificate_hash": "952441ba87658e1408410efcab2afb98aebff047"
+          }
+        },
+        {
+          "client_id": "324567874490-skn687f8vadqhq8vf08k7oclef80muea.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.englishapp",
+            "certificate_hash": "7b9cabf1d7c3772317e5e8963d64bc59156eae41"
+          }
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCgGt6XivYUG-EW7_JyS5zR5THhnS3JDhQ"
