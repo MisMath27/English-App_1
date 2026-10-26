@@ -5,7 +5,7 @@ import { useTheme } from '../context/ThemeContext';
 
 import MainScreen from '../screens/MainScreen';
 import LearnScreen from '../screens/LearnScreen';
-import GoalsScreen from '../screens/GoalsScreen';
+import GoalsScreen from '../screens/HackerMapScreen';
 import KnowledgeGraphScreen from '../screens/KnowledgeGraphScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 
@@ -36,7 +36,7 @@ const BottomTabNavigator = () => {
           let iconName;
           if (route.name === 'Главная') iconName = 'home';
           else if (route.name === 'Учить') iconName = 'menu-book';
-          else if (route.name === 'Цели') iconName = 'flag';
+          else if (route.name === 'Карта') iconName = 'flag';
           else if (route.name === 'Граф знаний') iconName = 'account-tree';
           else if (route.name === 'Настройки') iconName = 'settings';
           return <Icon name={iconName} size={size || 24} color={color} />;
@@ -45,7 +45,7 @@ const BottomTabNavigator = () => {
     >
       <Tab.Screen name="Главная" component={MainScreen} />
       <Tab.Screen name="Учить" component={LearnScreen} />
-      <Tab.Screen name="Цели" component={GoalsScreen} />
+      <Tab.Screen name="Карта" component={GoalsScreen} />
       <Tab.Screen name="Граф знаний" component={KnowledgeGraphScreen} />
       <Tab.Screen name="Настройки" component={SettingsScreen} />
     </Tab.Navigator>

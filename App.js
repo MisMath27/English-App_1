@@ -9,7 +9,7 @@ import { LanguageProvider, useTranslation } from './src/context/LanguageContext'
 
 import MainScreen from './src/screens/MainScreen';
 import LearnScreen from './src/screens/LearnScreen';
-import GoalsScreen from './src/screens/GoalsScreen';
+import GoalsScreen from './src/screens/HackerMapScreen';
 import KnowledgeGraphScreen from './src/screens/KnowledgeGraphScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
