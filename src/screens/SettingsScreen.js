@@ -25,8 +25,12 @@ const SettingsScreen = ({ navigation }) => {
   const [currentUid, setCurrentUid] = useState(null);
 
   const [user, setUser] = useState({
-    name: 'Гость', email: 'Войдите в аккаунт', level: 'A1',
-    joinDate: new Date().toISOString().split('T')[0], photoURL: null
+    uid: null,
+    name: 'Гость',
+    email: 'Войдите в аккаунт',
+    level: 'A1',
+    joinDate: new Date().toISOString().split('T')[0],
+    photoURL: null
   });
 
   const [settings, setSettings] = useState({
@@ -62,18 +66,28 @@ const SettingsScreen = ({ navigation }) => {
       setCurrentUid(uid);
 
       if (fbUser) {
-        const userData = {
+        // Берем ГЛАВНЫЕ данные из Firebase
+        setUser({
           uid: fbUser.uid,
           name: fbUser.displayName || 'Пользователь',
           email: fbUser.email || '',
           photoURL: fbUser.photoURL || null,
-          level: 'A1',
+          level: 'A1', // временно, пока не загрузим из памяти
           joinDate: new Date().toISOString().split('T')[0]
-        };
-        setUser(userData);
+        });
+
+        // Загружаем ТОЛЬКО локальный прогресс (уровень)
         loadAllData(uid);
       } else {
-        setUser({ name: 'Гость', email: 'Войдите в аккаунт', level: 'A1', joinDate: new Date().toISOString().split('T')[0], photoURL: null });
+        // Если вышли — сбрасываем на гостя
+        setUser({
+          uid: null,
+          name: 'Гость',
+          email: 'Войдите в аккаунт',
+          level: 'A1',
+          joinDate: new Date().toISOString().split('T')[0],
+          photoURL: null
+        });
       }
     });
     return subscriber;
@@ -84,16 +98,15 @@ const SettingsScreen = ({ navigation }) => {
   const loadAllData = async (uid) => {
     try {
       const settingsKey = `${BASE_SETTINGS_KEY}_${uid}`;
-      const userKey = `${BASE_USER_DATA_KEY}_${uid}`;
       const wordsKey = `${BASE_WORDS_KEY}_${uid}`;
 
+      // Настройки
       const rawSaved = await AsyncStorage.getItem(settingsKey);
       let merged = {
         notifications: true, soundEffects: true, autoPlay: false,
         dailyReminder: true, reminderTime: '20:00', wordsPerDay: 30,
         reviewCount: 15, language: 'ru', fontSize: 'medium',
       };
-
       if (rawSaved) {
         const parsed = JSON.parse(rawSaved);
         merged = { ...merged, ...parsed };
@@ -102,22 +115,15 @@ const SettingsScreen = ({ navigation }) => {
       }
       setSettings(merged);
 
-      const savedUser = await AsyncStorage.getItem(userKey);
-      if (savedUser) {
-        const parsed = JSON.parse(savedUser);
-        setUser(prev => ({
-          ...prev,
-          ...parsed,
-          // Если в сохраненных данных нет фото, берем из Firebase
-          photoURL: parsed.photoURL || (auth().currentUser?.photoURL || null)
-        }));
-      }
-
+      // Считаем уровень по словам
       const wordsRaw = await AsyncStorage.getItem(wordsKey);
       const words = wordsRaw ? JSON.parse(wordsRaw) : [];
       const learned = words.filter((w) => w.isLearned).length;
       const level = learned >= 2000 ? 'C1' : learned >= 1500 ? 'B2' : learned >= 1000 ? 'B1' : learned >= 500 ? 'A2' : 'A1';
+
+      // Обновляем ТОЛЬКО уровень, не трогая имя и фото!
       setUser((prev) => ({ ...prev, level }));
+
     } catch (error) {
       console.log('Ошибка загрузки:', error);
     }

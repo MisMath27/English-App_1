@@ -10,7 +10,7 @@ const windowDimensions = Dimensions.get('window');
 const SCREEN_W = windowDimensions.width;
 const SCREEN_H = windowDimensions.height;
 
-// ✅ УМЕНЬШИЛИ РАЗМЕРЫ ХОЛСТА, ЧТОБЫ КАРТА ВЛЕЗЛА
+// УМЕНЬШИЛИ РАЗМЕРЫ ХОЛСТА, ЧТОБЫ КАРТА ВЛЕЗЛА
 const MAP_W = 1200;
 const MAP_H = 800;
 
@@ -90,7 +90,7 @@ export default function HackerMapScreen() {
 
   if (loading) return <ActivityIndicator size="large" color="#0F0" style={{ flex: 1, backgroundColor: '#000' }} />;
 
-  // ✅ УМЕНЬШИЛИ МАСШТАБ ПРОЕКЦИИ (было 300, стало 120)
+  // УМЕНЬШИЛИ МАСШТАБ ПРОЕКЦИИ (было 300, стало 120)
   const projection = d3.geoMercator()
     .scale(120)
     .translate([MAP_W / 2, MAP_H / 2]);
