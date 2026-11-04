@@ -1,22 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
-import Svg, { G, Path, Circle } from 'react-native-svg';
+import Svg, { G, Path, Text as SvgText } from 'react-native-svg';
 import * as d3 from 'd3-geo';
 import * as topojson from 'topojson-client';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring, interpolate, useAnimatedProps } from 'react-native-reanimated';
 
 const windowDimensions = Dimensions.get('window');
 const SCREEN_W = windowDimensions.width;
 const SCREEN_H = windowDimensions.height;
 
-// УМЕНЬШИЛИ РАЗМЕРЫ ХОЛСТА, ЧТОБЫ КАРТА ВЛЕЗЛА
-const MAP_W = 1200;
-const MAP_H = 800;
+const MAP_W = 2000; // Увеличили холст
+const MAP_H = 1200;
 
-// Ограничения для движения (чтобы карта не уезжала за экран)
 const MAX_TRANSLATE_X = Math.max(0, (MAP_W - SCREEN_W) / 2);
 const MAX_TRANSLATE_Y = Math.max(0, (MAP_H - SCREEN_H) / 2);
+
+const CONTINENTS_LABELS = [
+  { name: 'NORTH AMERICA', coords: [-100, 45] },
+  { name: 'SOUTH AMERICA', coords: [-60, -15] },
+  { name: 'EUROPE', coords: [15, 50] },
+  { name: 'AFRICA', coords: [20, 0] },
+  { name: 'ASIA', coords: [90, 45] },
+  { name: 'AUSTRALIA', coords: [135, -25] },
+  { name: 'ANTARCTICA', coords: [0, -80] },
+];
+
+const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
 export default function HackerMapScreen() {
   const [features, setFeatures] = useState([]);
@@ -30,24 +40,22 @@ export default function HackerMapScreen() {
   const savedTranslationX = useSharedValue(0);
   const savedTranslationY = useSharedValue(0);
 
-  // Зум
   const pinchGesture = Gesture.Pinch()
     .onUpdate((e) => {
       scale.value = savedScale.value * e.scale;
     })
     .onEnd(() => {
-      if (scale.value < 0.8) {
-        scale.value = withSpring(0.8);
-        savedScale.value = 0.8;
-      } else if (scale.value > 2) {
-        scale.value = withSpring(2);
-        savedScale.value = 2;
+      if (scale.value < 0.5) {
+        scale.value = withSpring(0.5);
+        savedScale.value = 0.5;
+      } else if (scale.value > 4) {
+        scale.value = withSpring(4);
+        savedScale.value = 4;
       } else {
         savedScale.value = scale.value;
       }
     });
 
-  // Перетаскивание
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
       translationX.value = savedTranslationX.value + e.translationX;
@@ -62,7 +70,6 @@ export default function HackerMapScreen() {
         velocity: e.velocityY,
         clamp: [-MAX_TRANSLATE_Y, MAX_TRANSLATE_Y],
       });
-
       savedTranslationX.value = translationX.value;
       savedTranslationY.value = translationY.value;
     });
@@ -77,6 +84,16 @@ export default function HackerMapScreen() {
     ],
   }));
 
+  // Материки: видны при малом зуме, исчезают при среднем
+  const continentsOpacity = useAnimatedProps(() => ({
+    opacity: interpolate(scale.value, [1, 2], [0.6, 0], 'clamp'),
+  }));
+
+  // Страны: появляются только при сильном зуме
+  const countriesOpacity = useAnimatedProps(() => ({
+    opacity: interpolate(scale.value, [2.5, 3.5], [0, 0.8], 'clamp'),
+  }));
+
   useEffect(() => {
     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(res => res.json())
@@ -88,36 +105,85 @@ export default function HackerMapScreen() {
       .catch(err => console.error(err));
   }, []);
 
-  if (loading) return <ActivityIndicator size="large" color="#0F0" style={{ flex: 1, backgroundColor: '#000' }} />;
+  if (loading) return <ActivityIndicator size="large" color="#00FFCC" style={{ flex: 1, backgroundColor: '#000' }} />;
 
-  // УМЕНЬШИЛИ МАСШТАБ ПРОЕКЦИИ (было 300, стало 120)
+  // ✅ УВЕЛИЧИЛИ МАСШТАБ ДО 200 (было 120)
   const projection = d3.geoMercator()
-    .scale(120)
+    .scale(200)
     .translate([MAP_W / 2, MAP_H / 2]);
 
   const pathGenerator = d3.geoPath().projection(projection);
-
-  const londonPoint = projection([-0.1276, 51.5074]);
-  const londonX = londonPoint ? londonPoint[0] : 0;
-  const londonY = londonPoint ? londonPoint[1] : 0;
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <GestureDetector gesture={composedGesture}>
         <Animated.View style={[styles.mapContainer, animatedStyle]}>
           <Svg width={MAP_W} height={MAP_H}>
+
+            {/* Слой 1: Контуры стран */}
             <G>
               {features.map((feature, index) => (
                 <Path
                   key={index}
                   d={pathGenerator(feature)}
                   fill="#0B1E2D"
-                  stroke="#0F0"
-                  strokeWidth={1}
+                  stroke="#00FFCC"
+                  strokeWidth={0.5}
                 />
               ))}
             </G>
-            <Circle cx={londonX} cy={londonY} r={8} fill="#0F0" stroke="#fff" strokeWidth={1} />
+
+            {/* Слой 2: Названия материков */}
+            {CONTINENTS_LABELS.map((continent, index) => {
+              const point = projection(continent.coords);
+              if (!point) return null;
+              return (
+                <AnimatedSvgText
+                  key={`cont-${index}`}
+                  x={point[0]}
+                  y={point[1]}
+                  fill="#00FFCC"
+                  fontSize="20"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                  textAnchor="middle"
+                  animatedProps={continentsOpacity}
+                >
+                  {continent.name}
+                </AnimatedSvgText>
+              );
+            })}
+
+            {/* Слой 3: Названия стран (только крупные) */}
+            {features.map((feature, index) => {
+              const centroid = pathGenerator.centroid(feature);
+              const countryName = feature.properties.name;
+
+              if (!countryName || !centroid || isNaN(centroid[0])) return null;
+
+              // Считаем площадь
+              const area = pathGenerator.area(feature);
+
+              // Оставляем только очень крупные страны (порог 10.0)
+              // При scale(200) это оставит только гигантов
+              if (area < 10.0) return null;
+
+              return (
+                <AnimatedSvgText
+                  key={`country-${index}`}
+                  x={centroid[0]}
+                  y={centroid[1]}
+                  fill="#00FFCC"
+                  fontSize="6"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  animatedProps={countriesOpacity}
+                >
+                  {countryName}
+                </AnimatedSvgText>
+              );
+            })}
+
           </Svg>
         </Animated.View>
       </GestureDetector>
