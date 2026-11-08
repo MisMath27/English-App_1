@@ -14,7 +14,7 @@ export default function WelcomeScreen() {
     });
   }, []);
 
-  // 👇 ВОТ ЭТА ФУНКЦИЯ БЫЛА УДАЛЕНА
+  // ВОТ ЭТА ФУНКЦИЯ БЫЛА УДАЛЕНА
   const signInWithGoogle = async () => {
     try {
       await GoogleSignin.hasPlayServices();
@@ -50,7 +50,7 @@ export default function WelcomeScreen() {
 
         <Text style={styles.title}>SYSTEM READY</Text>
         <Text style={styles.subtitle}>
-          Для доступа к базе данных требуется авторизация.
+          Для доступа к приложению требуется авторизация.
         </Text>
 
         {/* Кнопка входа */}
@@ -62,7 +62,7 @@ export default function WelcomeScreen() {
         </TouchableOpacity>
 
         <Text style={styles.footerText}>
-          Авторизуясь, вы сохраняете свой прогресс в облаке и получаете доступ к глобальной карте.
+          Авторизуясь, вы сохраняете свой прогресс в облаке и получаете доступ к приложению.
         </Text>
 
       </LinearGradient>
