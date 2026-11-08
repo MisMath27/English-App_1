@@ -12,6 +12,10 @@ import auth from '@react-native-firebase/auth';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
+import { Text as SvgText } from 'react-native-svg';
+import { CartesianChart, Bar } from 'victory-native';
+import { useFont } from 'react-native-skia';
+import inter from '../assets/Inter-Medium.ttf';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +46,7 @@ const MainScreen = ({ navigation }) => {
 
   const [currentUid, setCurrentUid] = useState(null);
   const currentUidRef = useRef(null);
+  const font = useFont(inter, 12);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -49,13 +54,11 @@ const MainScreen = ({ navigation }) => {
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   // ИСПРАВЛЕНО: Перезагружаем данные при каждом фокусе на экране
-        useFocusEffect(
+          useFocusEffect(
             useCallback(() => {
-              // 1. Проверяем пользователя
               const user = auth().currentUser;
               const uid = user ? user.uid : null;
 
-              // 2. Если пользователь сменился — сбрасываем данные
               if (currentUidRef.current !== uid) {
                 setVocabularySize({ total: 0, learned: 0, inProgress: 0, toReview: 0 });
                 setChartData(null);
@@ -63,16 +66,19 @@ const MainScreen = ({ navigation }) => {
                 setCurrentUid(uid);
               }
 
-              // 3. Всегда загружаем данные при фокусе (если есть uid)
               if (uid) {
                 loadUserData(uid);
-                // getDailyQuote(uid); // <-- Цитату можно грузить только при смене пользователя, чтобы не менять её каждый раз
+                // ДОБАВЬТЕ ЭТО: загружаем цитату, если её еще нет
+                if (!quote) {
+                  getDailyQuote(uid);
+                }
               } else {
                 setLoading(false);
               }
-            }, []) // <-- Пустой массив зависимостей, чтобы срабатывало при каждом фокусе
+            }, [quote]) // <-- Добавьте quote в зависимости, чтобы срабатывало при загрузке
           );
 
+  const [chartKey, setChartKey] = useState(0);
 
   useEffect(() => {
     Animated.parallel([
@@ -87,6 +93,7 @@ const MainScreen = ({ navigation }) => {
       ])
     ).start();
   }, []);
+
 
   const getDailyQuote = async (uid) => {
     try {
@@ -271,6 +278,7 @@ generateRealChartData
       console.log('График: reviewedData =', reviewedData);
 
       setChartData(null);
+      console.log('CHART DATA SET:', JSON.stringify(chartData));
     }
   };
 
@@ -429,63 +437,44 @@ generateRealChartData
               </View>
             </View>
 
-            {chartData && chartData.isEmpty ? (
-              <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-                 <Icon name="insert-chart-outlined" size={40} color={colors.textMuted} />
-                 <Text style={{ color: colors.textSecondary, marginTop: 10, fontSize: 14 }}>
-                   Нет данных за выбранный период
-                 </Text>
-              </View>
-            ) : chartData && chartData.datasets && chartData.datasets.length > 0 ? (
-              <Animated.View style={{ transform: [{ scale: progressAnim }] }}>
-                <BarChart
-//                key={`${selectedPeriod}-${vocabularySize.learned}`}
-                  data={{
-                    labels: chartData.labels,
-                    datasets: [
-                      {
-                        data: chartData.datasets[0].data,
-                        color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})`
-                      },
-                      {
-                        data: chartData.datasets[1].data,
-                        color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`
-                      },
-                    ]
-                  }}
-                  width={width - 64}
-                  height={220}
-                  chartConfig={{
-                    backgroundColor: colors.backgroundSecondary,
-                    backgroundGradientFrom: colors.backgroundSecondary,
-                    backgroundGradientTo: colors.backgroundSecondary,
-                    decimalPlaces: 0,
-                    // ИСПРАВЛЕНО: Цвета зависят от темы
-                    color: (opacity = 1) => isDarkMode
-                      ? `rgba(255, 255, 255, ${opacity * 0.6})`
-                      : `rgba(0, 0, 0, ${opacity * 0.6})`,
-                    labelColor: (opacity = 1) => isDarkMode
-                      ? `rgba(255, 255, 255, ${opacity * 0.6})`
-                      : `rgba(0, 0, 0, ${opacity * 0.6})`,
-                    style: { borderRadius: 16 },
-                    barPercentage: 0.6,
-                    propsForBackgroundLines: {
-                      stroke: colors.cardBorder, // Цвет сетки из темы
-                      strokeDasharray: "4",
-                    },
-                  }}
-                  style={styles.chart}
-                  showValuesOnTopOfBars
-                  fromZero
-                  withInnerLines={true}
-                  stacked={false}
-                />
-              </Animated.View>
-            ) : (
-              <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-                 <Text style={{ color: colors.textSecondary }}>Загрузка графика...</Text>
-              </View>
-            )}
+            <View style={{ height: 260, paddingVertical: 16 }}>
+              <CartesianChart
+                data={chartData.labels.map((label, index) => ({
+                  day: label,
+                  learned: chartData.datasets[0].data[index] || 0,
+                  reviewed: chartData.datasets[1].data[index] || 0,
+                }))}
+                xKey="day"
+                yKeys={["learned", "reviewed"]}
+                domainPadding={{ top: 20, bottom: 20 }}
+                font={font} // <-- ДОБАВЬТЕ ШРИФТ
+                axisOptions={{
+                  font,
+                  labelColor: colors.textSecondary,
+                  lineColor: colors.cardBorder,
+                  tickCount: { x: 7, y: 4 }, // 7 дней по X, 4 деления по Y
+                }}
+              >
+                {({ points, chartBounds }) => (
+                  <>
+                    <Bar
+                      points={points.learned}
+                      chartBounds={chartBounds}
+                      color="#4CAF50"
+                      roundedCorners={{ topLeft: 4, topRight: 4 }}
+                      barWidth={12} // <-- Сделайте столбики уже
+                    />
+                    <Bar
+                      points={points.reviewed}
+                      chartBounds={chartBounds}
+                      color="#FF9800"
+                      roundedCorners={{ topLeft: 4, topRight: 4 }}
+                      barWidth={12}
+                    />
+                  </>
+                )}
+              </CartesianChart>
+            </View>
 
             <View style={styles.chartLegend}>
               <View style={styles.legendItem}>
