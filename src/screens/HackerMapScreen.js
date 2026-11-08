@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
-import Svg, { G, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Path, Text as SvgText, Circle } from 'react-native-svg';
 import * as d3 from 'd3-geo';
 import * as topojson from 'topojson-client';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring, interpolate, useAnimatedProps } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring, interpolate, useAnimatedProps, runOnJS } from 'react-native-reanimated';
 
 const windowDimensions = Dimensions.get('window');
 const SCREEN_W = windowDimensions.width;
 const SCREEN_H = windowDimensions.height;
 
-const MAP_W = 2000; // Увеличили холст
-const MAP_H = 1200;
+const MAP_W = 1200;
+const MAP_H = 800;
 
 const MAX_TRANSLATE_X = Math.max(0, (MAP_W - SCREEN_W) / 2);
 const MAX_TRANSLATE_Y = Math.max(0, (MAP_H - SCREEN_H) / 2);
+
+const CITY_GRAMMAR = [
+  { id: 'london', name: 'LONDON', country: 'UK', coords: [-0.1276, 51.5074], topic: 'To Be (am/is/are)', level: 'A1' },
+  { id: 'washington', name: 'WASHINGTON', country: 'USA', coords: [-77.0369, 38.9072], topic: 'Present Simple', level: 'A1' },
+  { id: 'ottawa', name: 'OTTAWA', country: 'Canada', coords: [-75.6972, 45.4215], topic: 'Articles (a/an/the)', level: 'A1' },
+  { id: 'canberra', name: 'CANBERRA', country: 'Australia', coords: [149.1300, -35.2809], topic: 'Past Simple', level: 'A2' },
+  { id: 'dublin', name: 'DUBLIN', country: 'Ireland', coords: [-6.2603, 53.3498], topic: 'Present Continuous', level: 'A2' },
+  { id: 'wellington', name: 'WELLINGTON', country: 'New Zealand', coords: [174.7762, -41.2865], topic: 'Present Perfect', level: 'B1' },
+  { id: 'tokyo', name: 'TOKYO', country: 'Japan', coords: [139.6917, 35.6895], topic: 'Passive Voice', level: 'B2' },
+  { id: 'berlin', name: 'BERLIN', country: 'Germany', coords: [13.4050, 52.5200], topic: 'Reported Speech', level: 'B2' },
+];
 
 const CONTINENTS_LABELS = [
   { name: 'NORTH AMERICA', coords: [-100, 45] },
@@ -28,9 +39,12 @@ const CONTINENTS_LABELS = [
 
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
 
-export default function HackerMapScreen() {
+export default function HackerMapScreen({ navigation }) {
   const [features, setFeatures] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Состояние для хранения вычисленных экранных координат городов
+  const [cityPositions, setCityPositions] = useState([]);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -40,22 +54,32 @@ export default function HackerMapScreen() {
   const savedTranslationX = useSharedValue(0);
   const savedTranslationY = useSharedValue(0);
 
+  // Функция для перехода на экран грамматики
+  const handleCityPress = (city) => {
+    navigation.navigate('GrammarScreen', {
+      cityName: city.name,
+      topic: city.topic
+    });
+  };
+
+  // Жест "Щипок" (Зум)
   const pinchGesture = Gesture.Pinch()
     .onUpdate((e) => {
       scale.value = savedScale.value * e.scale;
     })
     .onEnd(() => {
-      if (scale.value < 0.5) {
-        scale.value = withSpring(0.5);
-        savedScale.value = 0.5;
-      } else if (scale.value > 4) {
-        scale.value = withSpring(4);
-        savedScale.value = 4;
+      if (scale.value < 0.8) {
+        scale.value = withSpring(0.8);
+        savedScale.value = 0.8;
+      } else if (scale.value > 5) {
+        scale.value = withSpring(5);
+        savedScale.value = 5;
       } else {
         savedScale.value = scale.value;
       }
     });
 
+  // Жест "Перетаскивание"
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
       translationX.value = savedTranslationX.value + e.translationX;
@@ -74,7 +98,36 @@ export default function HackerMapScreen() {
       savedTranslationY.value = translationY.value;
     });
 
-  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
+  // Жест "Тап" (Клик)
+  const tapGesture = Gesture.Tap()
+    .onEnd((e, success) => {
+      if (!success) return;
+
+      // Вычисляем реальные координаты касания на "холсте" карты
+      // Формула: (координата на экране - сдвиг) / масштаб
+      const tapX = (e.x - translationX.value) / scale.value;
+      const tapY = (e.y - translationY.value) / scale.value;
+
+      // Ищем, попали ли мы в какую-то точку
+      // Используем runOnJS, так как navigate - это JS функция
+      for (const city of cityPositions) {
+        const dx = tapX - city.x;
+        const dy = tapY - city.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        // Радиус клика 15 пикселей (с учетом масштаба)
+        if (distance < 15) {
+          runOnJS(handleCityPress)(city.data);
+          break;
+        }
+      }
+    });
+
+  // Объединяем жесты: Pan и Pinch работают одновременно, Tap тоже
+  const composedGesture = Gesture.Race(
+    Gesture.Simultaneous(pinchGesture, panGesture),
+    tapGesture
+  );
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -84,16 +137,15 @@ export default function HackerMapScreen() {
     ],
   }));
 
-  // Материки: видны при малом зуме, исчезают при среднем
   const continentsOpacity = useAnimatedProps(() => ({
-    opacity: interpolate(scale.value, [1, 2], [0.6, 0], 'clamp'),
+    opacity: interpolate(scale.value, [1, 2.5], [0.6, 0], 'clamp'),
   }));
 
-  // Страны: появляются только при сильном зуме
   const countriesOpacity = useAnimatedProps(() => ({
-    opacity: interpolate(scale.value, [2.5, 3.5], [0, 0.8], 'clamp'),
+    opacity: interpolate(scale.value, [3.5, 5], [0, 0.8], 'clamp'),
   }));
 
+  // Загрузка данных карты
   useEffect(() => {
     fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
       .then(res => res.json())
@@ -105,11 +157,31 @@ export default function HackerMapScreen() {
       .catch(err => console.error(err));
   }, []);
 
+  // Вычисление координат городов после загрузки карты
+  useEffect(() => {
+    if (loading) return;
+
+    const projection = d3.geoMercator()
+      .scale(120)
+      .translate([MAP_W / 2, MAP_H / 2]);
+
+    const positions = CITY_GRAMMAR.map(city => {
+      const point = projection(city.coords);
+      if (!point) return null;
+      return {
+        x: point[0],
+        y: point[1],
+        data: city
+      };
+    }).filter(Boolean);
+
+    setCityPositions(positions);
+  }, [loading]);
+
   if (loading) return <ActivityIndicator size="large" color="#00FFCC" style={{ flex: 1, backgroundColor: '#000' }} />;
 
-  // ✅ УВЕЛИЧИЛИ МАСШТАБ ДО 200 (было 120)
   const projection = d3.geoMercator()
-    .scale(200)
+    .scale(120)
     .translate([MAP_W / 2, MAP_H / 2]);
 
   const pathGenerator = d3.geoPath().projection(projection);
@@ -120,7 +192,7 @@ export default function HackerMapScreen() {
         <Animated.View style={[styles.mapContainer, animatedStyle]}>
           <Svg width={MAP_W} height={MAP_H}>
 
-            {/* Слой 1: Контуры стран */}
+            {/* Слой 1: Страны */}
             <G>
               {features.map((feature, index) => (
                 <Path
@@ -133,7 +205,7 @@ export default function HackerMapScreen() {
               ))}
             </G>
 
-            {/* Слой 2: Названия материков */}
+            {/* Слой 2: Материки */}
             {CONTINENTS_LABELS.map((continent, index) => {
               const point = projection(continent.coords);
               if (!point) return null;
@@ -154,18 +226,13 @@ export default function HackerMapScreen() {
               );
             })}
 
-            {/* Слой 3: Названия стран (только крупные) */}
+            {/* Слой 3: Страны (гиганты) */}
             {features.map((feature, index) => {
               const centroid = pathGenerator.centroid(feature);
               const countryName = feature.properties.name;
 
               if (!countryName || !centroid || isNaN(centroid[0])) return null;
-
-              // Считаем площадь
               const area = pathGenerator.area(feature);
-
-              // Оставляем только очень крупные страны (порог 10.0)
-              // При scale(200) это оставит только гигантов
               if (area < 10.0) return null;
 
               return (
@@ -174,7 +241,7 @@ export default function HackerMapScreen() {
                   x={centroid[0]}
                   y={centroid[1]}
                   fill="#00FFCC"
-                  fontSize="6"
+                  fontSize="5"
                   fontFamily="monospace"
                   textAnchor="middle"
                   animatedProps={countriesOpacity}
@@ -183,6 +250,30 @@ export default function HackerMapScreen() {
                 </AnimatedSvgText>
               );
             })}
+
+            {/* Слой 4: Грамматические точки (Столицы) */}
+            {cityPositions.map((city, index) => (
+              <G key={`city-${index}`}>
+                <Circle
+                  cx={city.x}
+                  cy={city.y}
+                  r={6}
+                  fill="#FFCC00"
+                  stroke="#000"
+                  strokeWidth={1}
+                />
+                <SvgText
+                  x={city.x + 10}
+                  y={city.y + 4}
+                  fill="#FFCC00"
+                  fontSize="8"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  {city.data.name}
+                </SvgText>
+              </G>
+            ))}
 
           </Svg>
         </Animated.View>

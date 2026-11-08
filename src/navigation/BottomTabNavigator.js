@@ -8,6 +8,13 @@ import LearnScreen from '../screens/LearnScreen';
 import GoalsScreen from '../screens/HackerMapScreen';
 import KnowledgeGraphScreen from '../screens/KnowledgeGraphScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import GrammarScreen from '../screens/GrammarScreen';
+
+<Stack.Screen
+  name="GrammarScreen"
+  component={GrammarScreen}
+  options={({ route }) => ({ title: route.params?.cityName || 'Грамматика' })}
+/>
 
 const Tab = createBottomTabNavigator();
 
