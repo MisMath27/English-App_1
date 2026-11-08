@@ -300,99 +300,106 @@ const LearnScreen = ({ route, navigation }) => {
     },
   });
 
-  const handleSwipe = async (direction) => {
-    if (!currentWord || isProcessing.current) return;
-    isProcessing.current = true;
-    setShowTranslation(false);
-    const isLearnTab = activeTab === 'learn';
-    const isLearning = direction === 1 && isLearnTab;
-    const isPostponing = direction === -1 && isLearnTab;
-    const activeUid = currentUidRef.current;
+    const handleSwipe = async (direction) => {
+      if (!currentWord || isProcessing.current) return;
+      isProcessing.current = true;
+      setShowTranslation(false);
+      const isLearnTab = activeTab === 'learn';
+      const isLearning = direction === 1 && isLearnTab;
+      const isPostponing = direction === -1 && isLearnTab;
+      const activeUid = currentUidRef.current;
 
-    if (isLearnTab) {
-      if (isLearning) {
-        setIsLearnProcessing(true);
-        const newAllWords = allWords.map(w => w.id === currentWord.id ? { ...w, isLearned: true, lastReviewed: new Date().toISOString() } : w);
-        const newPostponedIds = postponedIds.filter(id => id !== currentWord.id);
-        setAllWords(newAllWords); setPostponedIds(newPostponedIds);
+      if (isLearnTab) {
+        if (isLearning) {
+          setIsLearnProcessing(true);
+          const newAllWords = allWords.map(w => w.id === currentWord.id ? { ...w, isLearned: true, lastReviewed: new Date().toISOString() } : w);
+          const newPostponedIds = postponedIds.filter(id => id !== currentWord.id);
+          setAllWords(newAllWords); setPostponedIds(newPostponedIds);
 
-        await AsyncStorage.setItem(`@english_app:words_${activeUid}`, JSON.stringify(newAllWords));
-        await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
-
-        const dailyKey = `@english_app:dailyStats_${activeUid}`;
-        const rawDaily = await AsyncStorage.getItem(dailyKey);
-        const daily = rawDaily ? JSON.parse(rawDaily) : {};
-        const newLearned = (daily.learned || 0) + 1;
-        await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, learned: newLearned }));
-        setTodayLearned(newLearned);
-
-        const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
-                const rawHistory = await AsyncStorage.getItem(historyKey);
-                const history = rawHistory ? JSON.parse(rawHistory) : {};
-                const todayString = new Date().toDateString();
-
-                if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
-                history[todayString].learned += 1;
-
-                await AsyncStorage.setItem(historyKey, JSON.stringify(history));
-
-        if (newLearned >= wordsPerDay && !celebrationShown) {
-          setCelebrationShown(true);
-          await AsyncStorage.setItem(`@english_app:celebrationShown_${activeUid}`, 'true');
-          showCelebrationAnimation(`${wordsPerDay}`);
-        }
-        const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
-        setTimeout(() => {
-          if (updatedSession.length === 0) generateSession();
-          setIsLearnProcessing(false); isProcessing.current = false;
-        }, 100);
-      } else if (isPostponing) {
-        const newPostponedIds = [...postponedIds];
-        if (!newPostponedIds.includes(currentWord.id)) newPostponedIds.push(currentWord.id);
-        setPostponedIds(newPostponedIds);
-        await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
-
-        const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
-        setTimeout(() => {
-          if (updatedSession.length === 0) generateSession();
-          isProcessing.current = false;
-        }, 100);
-      }
-    } else {
-      if (direction === 1) {
-        if (!reviewedWords.includes(currentWord.id)) {
-          const newReviewed = [...reviewedWords, currentWord.id];
-          setReviewedWords(newReviewed);
-          await AsyncStorage.setItem(`@english_app:reviewedWords_${activeUid}`, JSON.stringify(newReviewed));
+          await AsyncStorage.setItem(`@english_app:words_${activeUid}`, JSON.stringify(newAllWords));
+          await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
 
           const dailyKey = `@english_app:dailyStats_${activeUid}`;
           const rawDaily = await AsyncStorage.getItem(dailyKey);
           const daily = rawDaily ? JSON.parse(rawDaily) : {};
-          await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, reviewed: newReviewed.length }));
-          setTodayReviewed(newReviewed.length);
+          const newLearned = (daily.learned || 0) + 1;
+          await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, learned: newLearned }));
+          setTodayLearned(newLearned);
 
-          const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
-                    const rawHistory = await AsyncStorage.getItem(historyKey);
-                    const history = rawHistory ? JSON.parse(rawHistory) : {};
-                    const todayString = new Date().toDateString();
+           const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
+                  console.log('=== СОХРАНЕНИЕ ИСТОРИИ ===');
+                  console.log('UID:', activeUid);
+                  console.log('Ключ:', historyKey);
 
-                    if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
-                    history[todayString].reviewed += 1;
+                  const rawHistory = await AsyncStorage.getItem(historyKey);
+                  const history = rawHistory ? JSON.parse(rawHistory) : {};
+                  const todayString = new Date().toDateString();
 
-                    await AsyncStorage.setItem(historyKey, JSON.stringify(history));
+                  if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
+                  history[todayString].learned += 1;
 
+                  await AsyncStorage.setItem(historyKey, JSON.stringify(history));
+                  console.log('История сохранена:', history);
+
+          if (newLearned >= wordsPerDay && !celebrationShown) {
+            setCelebrationShown(true);
+            await AsyncStorage.setItem(`@english_app:celebrationShown_${activeUid}`, 'true');
+            showCelebrationAnimation(`${wordsPerDay}`);
+          }
+          const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
+          setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
+          setTimeout(() => {
+            if (updatedSession.length === 0) generateSession();
+            setIsLearnProcessing(false); isProcessing.current = false;
+          }, 100);
+        } else if (isPostponing) {
+          const newPostponedIds = [...postponedIds];
+          if (!newPostponedIds.includes(currentWord.id)) newPostponedIds.push(currentWord.id);
+          setPostponedIds(newPostponedIds);
+          await AsyncStorage.setItem(`@english_app:postponedIds_${activeUid}`, JSON.stringify(newPostponedIds));
+
+          const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
+          setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
+          setTimeout(() => {
+            if (updatedSession.length === 0) generateSession();
+            isProcessing.current = false;
+          }, 100);
         }
-        const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
-        setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
-        setTimeout(() => {
-          if (updatedSession.length === 0) generateSession();
-          isProcessing.current = false;
-        }, 100);
-      } else isProcessing.current = false;
-    }
-  };
+      } else {
+        // Блок повторения (Review)
+        if (direction === 1) {
+          if (!reviewedWords.includes(currentWord.id)) {
+            const newReviewed = [...reviewedWords, currentWord.id];
+            setReviewedWords(newReviewed);
+            await AsyncStorage.setItem(`@english_app:reviewedWords_${activeUid}`, JSON.stringify(newReviewed));
+
+            const dailyKey = `@english_app:dailyStats_${activeUid}`;
+            const rawDaily = await AsyncStorage.getItem(dailyKey);
+            const daily = rawDaily ? JSON.parse(rawDaily) : {};
+            await AsyncStorage.setItem(dailyKey, JSON.stringify({ ...daily, reviewed: newReviewed.length }));
+            setTodayReviewed(newReviewed.length);
+
+            // ДОБАВЛЯЕМ СОХРАНЕНИЕ В ИСТОРИЮ ДЛЯ ГРАФИКА (ПОВТОРЕНИЕ)
+            const historyKey = `@english_app:dailyStatsHistory_${activeUid}`;
+            const rawHistory = await AsyncStorage.getItem(historyKey);
+            const history = rawHistory ? JSON.parse(rawHistory) : {};
+            const todayString = new Date().toDateString();
+
+            if (!history[todayString]) history[todayString] = { learned: 0, reviewed: 0 };
+            history[todayString].reviewed += 1;
+
+            await AsyncStorage.setItem(historyKey, JSON.stringify(history));
+            // КОНЕЦ ДОБАВЛЕНИЯ
+          }
+          const updatedSession = sessionWords.filter(w => w.id !== currentWord.id);
+          setSessionWords(updatedSession); setCurrentIndex(0); setAllShown(false);
+          setTimeout(() => {
+            if (updatedSession.length === 0) generateSession();
+            isProcessing.current = false;
+          }, 100);
+        } else isProcessing.current = false;
+      }
+    };
 
   const toggleTranslation = () => setShowTranslation(!showTranslation);
 
