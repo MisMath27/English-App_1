@@ -8,7 +8,7 @@ const translations = {
     // Вкладки
     tab_home: 'Главная',
     tab_learn: 'Учить',
-    tab_goals: 'Цели',
+    tab_goals: 'Карта',
     tab_graph: 'Граф знаний',
     tab_settings: 'Настройки',
 
@@ -197,7 +197,7 @@ const translations = {
   en: {
     tab_home: 'Home',
     tab_learn: 'Learn',
-    tab_goals: 'Goals',
+    tab_goals: 'Map',
     tab_graph: 'Knowledge Graph',
     tab_settings: 'Settings',
 
