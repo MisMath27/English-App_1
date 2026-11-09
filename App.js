@@ -23,7 +23,7 @@ import GoalDetailScreen from './src/screens/GoalDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
-const GraphStack = createNativeStackNavigator(); // <-- Новый стек для графа
+const GraphStack = createNativeStackNavigator(); // <-- Стек для графа
 
 // Стек для вкладки "Граф знаний"
 const GraphStackScreen = () => {
@@ -43,15 +43,12 @@ const GraphStackScreen = () => {
       <GraphStack.Screen
         name="GoalDetailScreen"
         component={GoalDetailScreen}
-        options={{
-          headerShown: false, // У экрана целей свой заголовок
-        }}
+        options={{ headerShown: false }}
       />
     </GraphStack.Navigator>
   );
 };
 
-// Основной интерфейс с вкладками
 const AppContent = () => {
   const { colors, fontSizeMultiplier } = useTheme();
   const { t } = useTranslation();
@@ -109,7 +106,7 @@ const AppContent = () => {
       <Tab.Screen name={t('tab_home')} component={MainScreen} />
       <Tab.Screen name={t('tab_learn')} component={LearnScreen} />
       <Tab.Screen name={t('tab_goals')} component={GoalsScreen} />
-      {/* 👇 Вкладка "Граф" использует стек с двумя экранами */}
+      {/* 👇 Вкладка "Граф" использует стек */}
       <Tab.Screen
         name={t('tab_graph')}
         component={GraphStackScreen}
@@ -120,7 +117,6 @@ const AppContent = () => {
   );
 };
 
-// Корневой компонент навигации
 const RootNavigator = () => {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState(null);
@@ -150,12 +146,12 @@ const RootNavigator = () => {
           <Stack.Screen
             name="GrammarScreen"
             component={GrammarScreen}
-            options={{
+            options={({ route }) => ({
               headerShown: true,
-              title: 'Грамматика',
+              title: route.params?.cityName || 'Грамматика',
               headerStyle: { backgroundColor: colors.background },
               headerTintColor: colors.text,
-            }}
+            })}
           />
         </>
       ) : (

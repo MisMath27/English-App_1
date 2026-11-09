@@ -129,7 +129,7 @@ export default function GoalDetailScreen({ route, navigation }) {
                 onChangeText={(text) => {
                   const updated = goals.map(g => g.id === goal.id ? { ...g, notes: text } : g);
                   setGoals(updated);
-                  AsyncStorage.setItem(`@english_app:goals_${currentUid}`, JSON.stringify(updated));
+                  saveGoals(updated); // <-- через функцию, которая мержит с другими узлами
                 }}
                 multiline
               />

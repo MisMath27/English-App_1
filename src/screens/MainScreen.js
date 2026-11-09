@@ -419,42 +419,48 @@ const MainScreen = ({ navigation }) => {
             </View>
 
             <View style={{ height: 260, paddingVertical: 16 }}>
-              <CartesianChart
-                data={chartData.labels.map((label, index) => ({
-                  day: label,
-                  learned: chartData.datasets[0].data[index] || 0,
-                  reviewed: chartData.datasets[1].data[index] || 0,
-                }))}
-                xKey="day"
-                yKeys={["learned", "reviewed"]}
-                domainPadding={{ top: 20, bottom: 20 }}
-                font={font}
-                axisOptions={{
-                  font,
-                  labelColor: colors.textSecondary,
-                  lineColor: colors.cardBorder,
-                  tickCount: { x: 7, y: 4 },
-                }}
-              >
-                {({ points, chartBounds }) => (
-                  <>
-                    <Bar
-                      points={points.learned}
-                      chartBounds={chartBounds}
-                      color="#4CAF50"
-                      roundedCorners={{ topLeft: 4, topRight: 4 }}
-                      barWidth={12}
-                    />
-                    <Bar
-                      points={points.reviewed}
-                      chartBounds={chartBounds}
-                      color="#FF9800"
-                      roundedCorners={{ topLeft: 4, topRight: 4 }}
-                      barWidth={12}
-                    />
-                  </>
-                )}
-              </CartesianChart>
+              {chartData && chartData.labels && chartData.datasets && chartData.datasets.length > 0 ? (
+                <CartesianChart
+                  data={chartData.labels.map((label, index) => ({
+                    day: label,
+                    learned: chartData.datasets[0].data[index] || 0,
+                    reviewed: chartData.datasets[1].data[index] || 0,
+                  }))}
+                  xKey="day"
+                  yKeys={["learned", "reviewed"]}
+                  domainPadding={{ top: 20, bottom: 20 }}
+                  font={font}
+                  axisOptions={{
+                    font,
+                    labelColor: colors.textSecondary,
+                    lineColor: colors.cardBorder,
+                    tickCount: { x: 7, y: 4 },
+                  }}
+                >
+                  {({ points, chartBounds }) => (
+                    <>
+                      <Bar
+                        points={points.learned}
+                        chartBounds={chartBounds}
+                        color="#4CAF50"
+                        roundedCorners={{ topLeft: 4, topRight: 4 }}
+                        barWidth={12}
+                      />
+                      <Bar
+                        points={points.reviewed}
+                        chartBounds={chartBounds}
+                        color="#FF9800"
+                        roundedCorners={{ topLeft: 4, topRight: 4 }}
+                        barWidth={12}
+                      />
+                    </>
+                  )}
+                </CartesianChart>
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ color: colors.textSecondary }}>Загрузка графика...</Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.chartLegend}>
