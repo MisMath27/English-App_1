@@ -12,18 +12,46 @@ import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { LanguageProvider, useTranslation } from './src/context/LanguageContext';
 
 // Экраны
-import WelcomeScreen from './src/screens/WelcomeScreen'; // Убедитесь, что файл создан
+import WelcomeScreen from './src/screens/WelcomeScreen';
 import MainScreen from './src/screens/MainScreen';
 import LearnScreen from './src/screens/LearnScreen';
 import GoalsScreen from './src/screens/HackerMapScreen';
 import KnowledgeGraphScreen from './src/screens/KnowledgeGraphScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import GrammarScreen from './src/screens/GrammarScreen'; // Убедитесь, что файл создан
+import GrammarScreen from './src/screens/GrammarScreen';
+import GoalDetailScreen from './src/screens/GoalDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+const GraphStack = createNativeStackNavigator(); // <-- Новый стек для графа
 
-// Основной интерфейс с вкладками (показывается только авторизованным)
+// Стек для вкладки "Граф знаний"
+const GraphStackScreen = () => {
+  const { colors } = useTheme();
+  return (
+    <GraphStack.Navigator>
+      <GraphStack.Screen
+        name="KnowledgeGraphMain"
+        component={KnowledgeGraphScreen}
+        options={{
+          headerShown: true,
+          title: 'Граф знаний',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+        }}
+      />
+      <GraphStack.Screen
+        name="GoalDetailScreen"
+        component={GoalDetailScreen}
+        options={{
+          headerShown: false, // У экрана целей свой заголовок
+        }}
+      />
+    </GraphStack.Navigator>
+  );
+};
+
+// Основной интерфейс с вкладками
 const AppContent = () => {
   const { colors, fontSizeMultiplier } = useTheme();
   const { t } = useTranslation();
@@ -81,7 +109,12 @@ const AppContent = () => {
       <Tab.Screen name={t('tab_home')} component={MainScreen} />
       <Tab.Screen name={t('tab_learn')} component={LearnScreen} />
       <Tab.Screen name={t('tab_goals')} component={GoalsScreen} />
-      <Tab.Screen name={t('tab_graph')} component={KnowledgeGraphScreen} />
+      {/* 👇 Вкладка "Граф" использует стек с двумя экранами */}
+      <Tab.Screen
+        name={t('tab_graph')}
+        component={GraphStackScreen}
+        options={{ headerShown: false }}
+      />
       <Tab.Screen name={t('tab_settings')} component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -112,7 +145,6 @@ const RootNavigator = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {user ? (
-        // Пользователь авторизован — показываем вкладки и экран грамматики
         <>
           <Stack.Screen name="MainTabs" component={AppContent} />
           <Stack.Screen
@@ -127,7 +159,6 @@ const RootNavigator = () => {
           />
         </>
       ) : (
-        // Пользователь не авторизован — показываем экран приветствия
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
       )}
     </Stack.Navigator>
