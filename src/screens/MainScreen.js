@@ -5,14 +5,12 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { BarChart } from 'react-native-chart-kit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import auth from '@react-native-firebase/auth';
 import GlassCard from '../components/GlassCard';
 import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../context/LanguageContext';
-import { Text as SvgText } from 'react-native-svg';
 import { CartesianChart, Bar } from 'victory-native';
 import { useFont } from 'react-native-skia';
 import inter from '../assets/Inter-Medium.ttf';
@@ -33,7 +31,7 @@ const QUOTES_DATABASE = [
 ];
 
 const MainScreen = ({ navigation }) => {
-  const { colors, fontSizeMultiplier, isDarkMode } = useTheme(); // Добавили isDarkMode
+  const { colors, fontSizeMultiplier, isDarkMode } = useTheme();
   const { t } = useTranslation();
 
   const [loading, setLoading] = useState(true);
@@ -53,32 +51,28 @@ const MainScreen = ({ navigation }) => {
   const bounceAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  // ИСПРАВЛЕНО: Перезагружаем данные при каждом фокусе на экране
-          useFocusEffect(
-            useCallback(() => {
-              const user = auth().currentUser;
-              const uid = user ? user.uid : null;
+  useFocusEffect(
+    useCallback(() => {
+      const user = auth().currentUser;
+      const uid = user ? user.uid : null;
 
-              if (currentUidRef.current !== uid) {
-                setVocabularySize({ total: 0, learned: 0, inProgress: 0, toReview: 0 });
-                setChartData(null);
-                currentUidRef.current = uid;
-                setCurrentUid(uid);
-              }
+      if (currentUidRef.current !== uid) {
+        setVocabularySize({ total: 0, learned: 0, inProgress: 0, toReview: 0 });
+        setChartData(null);
+        currentUidRef.current = uid;
+        setCurrentUid(uid);
+      }
 
-              if (uid) {
-                loadUserData(uid);
-                // ДОБАВЬТЕ ЭТО: загружаем цитату, если её еще нет
-                if (!quote) {
-                  getDailyQuote(uid);
-                }
-              } else {
-                setLoading(false);
-              }
-            }, [quote]) // <-- Добавьте quote в зависимости, чтобы срабатывало при загрузке
-          );
-
-  const [chartKey, setChartKey] = useState(0);
+      if (uid) {
+        loadUserData(uid);
+        if (!quote) {
+          getDailyQuote(uid);
+        }
+      } else {
+        setLoading(false);
+      }
+    }, [quote])
+  );
 
   useEffect(() => {
     Animated.parallel([
@@ -93,7 +87,6 @@ const MainScreen = ({ navigation }) => {
       ])
     ).start();
   }, []);
-
 
   const getDailyQuote = async (uid) => {
     try {
@@ -141,9 +134,7 @@ const MainScreen = ({ navigation }) => {
         return;
       }
 
-//      setLoading(true);
-
-        if (vocabularySize.total === 0) setLoading(true);
+      if (vocabularySize.total === 0) setLoading(true);
 
       const userNameKey = `@english_app:userName_${uid}`;
       const savedName = await AsyncStorage.getItem(userNameKey);
@@ -172,10 +163,13 @@ const MainScreen = ({ navigation }) => {
       }
 
       const total = words.length;
-      const learned = words.filter(w => w.isLearned).length;
-      const inProgress = words.filter(w => w.reviewCount > 0 && !w.isLearned).length;
 
-      setVocabularySize({ total, learned, inProgress, toReview: learned });
+      // 👇 ИСПРАВЛЕНО: Подсчет по вашей логике
+      const learned = words.filter(w => w.isLearned).length; // Прошли 5 повторений
+      const toReview = words.filter(w => w.reviewCount > 0 && !w.isLearned).length; // Ждут повторения
+      const inProgress = toReview;
+
+      setVocabularySize({ total, learned, inProgress, toReview });
 
       const statsKey = `@english_app:userStats_${uid}`;
       const rawStats = await AsyncStorage.getItem(statsKey);
@@ -197,15 +191,7 @@ const MainScreen = ({ navigation }) => {
   const generateRealChartData = async (period, uid) => {
     try {
       const historyKey = `@english_app:dailyStatsHistory_${uid}`;
-
-      console.log('=== ЗАГРУЗКА ГРАФИКА ===');
-            console.log('UID в MainScreen:', uid);
-            console.log('Ключ в MainScreen:', historyKey);
-
       const rawHistory = await AsyncStorage.getItem(historyKey);
-
-      console.log('Сырые данные из истории:', rawHistory);
-generateRealChartData
       const history = rawHistory ? JSON.parse(rawHistory) : {};
 
       const today = new Date();
@@ -273,12 +259,7 @@ generateRealChartData
       });
     } catch (error) {
       console.log('Error generating chart:', error);
-
-      console.log('График: learnedData =', learnedData);
-      console.log('График: reviewedData =', reviewedData);
-
       setChartData(null);
-      console.log('CHART DATA SET:', JSON.stringify(chartData));
     }
   };
 
@@ -368,17 +349,17 @@ generateRealChartData
             <View style={styles.vocabSecondaryStats}>
               <View style={styles.vocabStatItem}>
                 <Text style={[styles.vocabStatNumber, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{vocabularySize.total}</Text>
-                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_total')}</Text>
-              </View>
-              <View style={[styles.vocabStatDivider, { backgroundColor: colors.cardBorder }]} />
-              <View style={styles.vocabStatItem}>
-                <Text style={[styles.vocabStatNumber, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{vocabularySize.inProgress}</Text>
-                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_in_progress')}</Text>
+                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>Всего</Text>
               </View>
               <View style={[styles.vocabStatDivider, { backgroundColor: colors.cardBorder }]} />
               <View style={styles.vocabStatItem}>
                 <Text style={[styles.vocabStatNumber, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{vocabularySize.toReview}</Text>
-                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>{t('home_to_review')}</Text>
+                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>К повторению</Text>
+              </View>
+              <View style={[styles.vocabStatDivider, { backgroundColor: colors.cardBorder }]} />
+              <View style={styles.vocabStatItem}>
+                <Text style={[styles.vocabStatNumber, { color: colors.text, fontSize: 20 * fontSizeMultiplier }]}>{vocabularySize.learned}</Text>
+                <Text style={[styles.vocabStatLabel, { color: colors.textSecondary, fontSize: 11 * fontSizeMultiplier }]}>Повторенные</Text>
               </View>
             </View>
           </GlassCard>
@@ -447,12 +428,12 @@ generateRealChartData
                 xKey="day"
                 yKeys={["learned", "reviewed"]}
                 domainPadding={{ top: 20, bottom: 20 }}
-                font={font} // <-- ДОБАВЬТЕ ШРИФТ
+                font={font}
                 axisOptions={{
                   font,
                   labelColor: colors.textSecondary,
                   lineColor: colors.cardBorder,
-                  tickCount: { x: 7, y: 4 }, // 7 дней по X, 4 деления по Y
+                  tickCount: { x: 7, y: 4 },
                 }}
               >
                 {({ points, chartBounds }) => (
@@ -462,7 +443,7 @@ generateRealChartData
                       chartBounds={chartBounds}
                       color="#4CAF50"
                       roundedCorners={{ topLeft: 4, topRight: 4 }}
-                      barWidth={12} // <-- Сделайте столбики уже
+                      barWidth={12}
                     />
                     <Bar
                       points={points.reviewed}
