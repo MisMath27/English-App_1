@@ -1,31 +1,56 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Dimensions, TouchableOpacity } from 'react-native';
 import Svg, { G, Path, Text as SvgText, Circle } from 'react-native-svg';
 import * as d3 from 'd3-geo';
 import * as topojson from 'topojson-client';
 import { GestureHandlerRootView, GestureDetector, Gesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring, interpolate, useAnimatedProps, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withDecay, withSpring, interpolate, useAnimatedProps } from 'react-native-reanimated';
+
 
 const windowDimensions = Dimensions.get('window');
 const SCREEN_W = windowDimensions.width;
 const SCREEN_H = windowDimensions.height;
 
+
 const MAP_W = 1200;
 const MAP_H = 800;
+
 
 const MAX_TRANSLATE_X = Math.max(0, (MAP_W - SCREEN_W) / 2);
 const MAX_TRANSLATE_Y = Math.max(0, (MAP_H - SCREEN_H) / 2);
 
+
 const CITY_GRAMMAR = [
   { id: 'london', name: 'LONDON', country: 'UK', coords: [-0.1276, 51.5074], topic: 'To Be (am/is/are)', level: 'A1' },
-  { id: 'washington', name: 'WASHINGTON', country: 'USA', coords: [-77.0369, 38.9072], topic: 'Present Simple', level: 'A1' },
-  { id: 'ottawa', name: 'OTTAWA', country: 'Canada', coords: [-75.6972, 45.4215], topic: 'Articles (a/an/the)', level: 'A1' },
-  { id: 'canberra', name: 'CANBERRA', country: 'Australia', coords: [149.1300, -35.2809], topic: 'Past Simple', level: 'A2' },
-  { id: 'dublin', name: 'DUBLIN', country: 'Ireland', coords: [-6.2603, 53.3498], topic: 'Present Continuous', level: 'A2' },
-  { id: 'wellington', name: 'WELLINGTON', country: 'New Zealand', coords: [174.7762, -41.2865], topic: 'Present Perfect', level: 'B1' },
-  { id: 'tokyo', name: 'TOKYO', country: 'Japan', coords: [139.6917, 35.6895], topic: 'Passive Voice', level: 'B2' },
-  { id: 'berlin', name: 'BERLIN', country: 'Germany', coords: [13.4050, 52.5200], topic: 'Reported Speech', level: 'B2' },
+    { id: 'washington', name: 'WASHINGTON', country: 'USA', coords: [-77.0369, 38.9072], topic: 'Present Simple', level: 'A1' },
+    { id: 'ottawa', name: 'OTTAWA', country: 'Canada', coords: [-75.6972, 45.4215], topic: 'Articles (a/an/the)', level: 'A1' },
+    { id: 'canberra', name: 'CANBERRA', country: 'Australia', coords: [149.1300, -35.2809], topic: 'Plural Nouns', level: 'A1' },
+    { id: 'dublin', name: 'DUBLIN', country: 'Ireland', coords: [-6.2603, 53.3498], topic: 'Adjectives', level: 'A1' },
+    { id: 'wellington', name: 'WELLINGTON', country: 'New Zealand', coords: [174.7762, -41.2865], topic: 'Prepositions of Place', level: 'A1' },
+
+    // --- УРОВЕНЬ A2 ---
+    { id: 'tokyo', name: 'TOKYO', country: 'Japan', coords: [139.6917, 35.6895], topic: 'Past Simple', level: 'A2' },
+    { id: 'berlin', name: 'BERLIN', country: 'Germany', coords: [13.4050, 52.5200], topic: 'Present Continuous', level: 'A2' },
+    { id: 'madrid', name: 'MADRID', country: 'Spain', coords: [-3.7038, 40.4168], topic: 'Comparatives', level: 'A2' },
+    { id: 'rome', name: 'ROME', country: 'Italy', coords: [12.4964, 41.9028], topic: 'Future (going to)', level: 'A2' },
+    { id: 'paris', name: 'PARIS', country: 'France', coords: [2.3522, 48.8566], topic: 'Countable/Uncountable', level: 'A2' },
+
+    // --- УРОВЕНЬ B1 ---
+    { id: 'moscow', name: 'MOSCOW', country: 'Russia', coords: [37.6173, 55.7558], topic: 'Present Perfect', level: 'B1' },
+    { id: 'beijing', name: 'BEIJING', country: 'China', coords: [116.4074, 39.9042], topic: 'First Conditional', level: 'B1' },
+    { id: 'seoul', name: 'SEOUL', country: 'South Korea', coords: [126.9780, 37.5665], topic: 'Modals (can/must)', level: 'B1' },
+    { id: 'cairo', name: 'CAIRO', country: 'Egypt', coords: [31.2357, 30.0444], topic: 'Past Continuous', level: 'B1' },
+    { id: 'brasilia', name: 'BRASILIA', country: 'Brazil', coords: [-47.8825, -15.7942], topic: 'Relative Clauses', level: 'B1' },
+
+    // --- УРОВЕНЬ B2 ---
+    { id: 'newdelhi', name: 'NEW DELHI', country: 'India', coords: [77.1025, 28.7041], topic: 'Passive Voice', level: 'B2' },
+    { id: 'mexico', name: 'MEXICO CITY', country: 'Mexico', coords: [-99.1332, 19.4326], topic: 'Reported Speech', level: 'B2' },
+    { id: 'buenosaires', name: 'BUENOS AIRES', country: 'Argentina', coords: [-58.3816, -34.6037], topic: 'Second Conditional', level: 'B2' },
+
+    // --- УРОВЕНЬ C1 ---
+    { id: 'stockholm', name: 'STOCKHOLM', country: 'Sweden', coords: [18.0686, 59.3293], topic: 'Third Conditional', level: 'C1' },
 ];
+
 
 const CONTINENTS_LABELS = [
   { name: 'NORTH AMERICA', coords: [-100, 45] },
@@ -37,7 +62,9 @@ const CONTINENTS_LABELS = [
   { name: 'ANTARCTICA', coords: [0, -80] },
 ];
 
+
 const AnimatedSvgText = Animated.createAnimatedComponent(SvgText);
+
 
 export default function HackerMapScreen({ navigation }) {
   const [features, setFeatures] = useState([]);
@@ -45,6 +72,7 @@ export default function HackerMapScreen({ navigation }) {
 
   // Состояние для хранения вычисленных экранных координат городов
   const [cityPositions, setCityPositions] = useState([]);
+  const [pressedCityId, setPressedCityId] = useState(null);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -98,36 +126,8 @@ export default function HackerMapScreen({ navigation }) {
       savedTranslationY.value = translationY.value;
     });
 
-  // Жест "Тап" (Клик)
-  const tapGesture = Gesture.Tap()
-    .onEnd((e, success) => {
-      if (!success) return;
-
-      // Вычисляем реальные координаты касания на "холсте" карты
-      // Формула: (координата на экране - сдвиг) / масштаб
-      const tapX = (e.x - translationX.value) / scale.value;
-      const tapY = (e.y - translationY.value) / scale.value;
-
-      // Ищем, попали ли мы в какую-то точку
-      // Используем runOnJS, так как navigate - это JS функция
-      for (const city of cityPositions) {
-        const dx = tapX - city.x;
-        const dy = tapY - city.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Радиус клика 15 пикселей (с учетом масштаба)
-        if (distance < 15) {
-          runOnJS(handleCityPress)(city.data);
-          break;
-        }
-      }
-    });
-
-  // Объединяем жесты: Pan и Pinch работают одновременно, Tap тоже
-  const composedGesture = Gesture.Race(
-    Gesture.Simultaneous(pinchGesture, panGesture),
-    tapGesture
-  );
+  // Объединяем жесты (без Tap, так как используем TouchableOpacity)
+  const composedGesture = Gesture.Simultaneous(pinchGesture, panGesture);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -252,30 +252,55 @@ export default function HackerMapScreen({ navigation }) {
             })}
 
             {/* Слой 4: Грамматические точки (Столицы) */}
-            {cityPositions.map((city, index) => (
-              <G key={`city-${index}`}>
-                <Circle
-                  cx={city.x}
-                  cy={city.y}
-                  r={6}
-                  fill="#FFCC00"
-                  stroke="#000"
-                  strokeWidth={1}
-                />
-                <SvgText
-                  x={city.x + 10}
-                  y={city.y + 4}
-                  fill="#FFCC00"
-                  fontSize="8"
-                  fontFamily="monospace"
-                  fontWeight="bold"
-                >
-                  {city.data.name}
-                </SvgText>
-              </G>
-            ))}
+            {cityPositions.map((city, index) => {
+                          // Проверяем, нажата ли эта точка
+                          const isPressed = pressedCityId === city.data.id;
+
+                          return (
+                            <G key={`city-${index}`}>
+                              <Circle
+                                cx={city.x}
+                                cy={city.y}
+                                r={isPressed ? 12 : 6} // <-- Радиус увеличивается
+                                fill={isPressed ? '#FFFFFF' : '#FFCC00'} // <-- Цвет меняется на белый
+                                stroke={isPressed ? '#00FFCC' : '#000'} // <-- Обводка бирюзовая
+                                strokeWidth={isPressed ? 3 : 1}
+                              />
+                              <SvgText
+                                x={city.x + 10}
+                                y={city.y + 4}
+                                fill={isPressed ? '#FFFFFF' : '#FFCC00'}
+                                fontSize={isPressed ? "12" : "8"} // <-- Текст увеличивается
+                                fontFamily="monospace"
+                                fontWeight="bold"
+                              >
+                                {city.data.name}
+                              </SvgText>
+                            </G>
+                          );
+                        })}
 
           </Svg>
+
+          {/* Слой 5: Невидимые кнопки для кликов (внутри Animated.View, чтобы двигаться с картой) */}
+          {cityPositions.map((city, index) => (
+            <TouchableOpacity
+              key={`btn-${index}`}
+              style={{
+                position: 'absolute',
+                left: city.x - 20,
+                top: city.y - 20,
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                // backgroundColor: 'rgba(255,0,0,0.3)', // Раскомментируйте для отладки
+              }}
+              onPressIn={() => setPressedCityId(city.data.id)}
+              onPressOut={() => setPressedCityId(null)}
+              onPress={() => handleCityPress(city.data)}
+            />
+          ))}
+
         </Animated.View>
       </GestureDetector>
     </GestureHandlerRootView>
