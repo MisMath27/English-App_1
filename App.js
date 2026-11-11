@@ -11,7 +11,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import { LanguageProvider, useTranslation } from './src/context/LanguageContext';
 
-// Экраны
+
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import MainScreen from './src/screens/MainScreen';
 import LearnScreen from './src/screens/LearnScreen';
@@ -20,6 +20,8 @@ import KnowledgeGraphScreen from './src/screens/KnowledgeGraphScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import GrammarScreen from './src/screens/GrammarScreen';
 import GoalDetailScreen from './src/screens/GoalDetailScreen';
+import LegalScreen from './src/screens/LegalScreen';
+
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -106,7 +108,7 @@ const AppContent = () => {
       <Tab.Screen name={t('tab_home')} component={MainScreen} />
       <Tab.Screen name={t('tab_learn')} component={LearnScreen} />
       <Tab.Screen name={t('tab_goals')} component={GoalsScreen} />
-      {/* 👇 Вкладка "Граф" использует стек */}
+      {/* Вкладка "Граф" использует стек */}
       <Tab.Screen
         name={t('tab_graph')}
         component={GraphStackScreen}
@@ -153,6 +155,11 @@ const RootNavigator = () => {
               headerTintColor: colors.text,
             })}
           />
+          <Stack.Screen
+            name="LegalScreen"
+            component={LegalScreen}
+            options={{ headerShown: false }}
+            />
         </>
       ) : (
         <Stack.Screen name="Welcome" component={WelcomeScreen} />

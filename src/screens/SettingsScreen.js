@@ -553,12 +553,22 @@ const SettingsScreen = ({ navigation }) => {
         <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
           <SectionHeader title={t('settings_about')} />
           <GlassCard style={styles.settingsCard}>
-            <SettingItem icon="info" title={t('settings_version')} value="1.0.1" type="value" />
+            <SettingItem icon="info" title={t('settings_version')} value="1.1.0" type="value" />
             <SettingItem icon="feedback" title={t('settings_feedback')} type="link" onPress={() => Linking.openURL('mailto:SupportEnglishApp@gmail.com')} />
             <SettingItem icon="star" title={t('settings_rate')} type="link" onPress={() => Linking.openURL('market://details?id=com.englishapp')} />
             <SettingItem icon="share" title={t('settings_share')} type="link" onPress={() => Share.share({ message: 'EnglishApp' })} />
-            <SettingItem icon="description" title={t('settings_terms')} type="link" onPress={() => Alert.alert('Условия', 'Текст условий...')} />
-            <SettingItem icon="privacy-tip" title={t('settings_privacy')} type="link" onPress={() => Alert.alert('Конфиденциальность', 'Текст политики...')} />
+            <SettingItem
+              icon="description"
+              title={t('settings_terms')}
+              type="link"
+              onPress={() => navigation.navigate('LegalScreen', { type: 'terms' })}
+            />
+            <SettingItem
+              icon="privacy-tip"
+              title={t('settings_privacy')}
+              type="link"
+              onPress={() => navigation.navigate('LegalScreen', { type: 'privacy' })}
+            />
           </GlassCard>
         </Animated.View>
 

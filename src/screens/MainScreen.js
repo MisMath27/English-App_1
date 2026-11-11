@@ -428,7 +428,7 @@ const MainScreen = ({ navigation }) => {
                   }))}
                   xKey="day"
                   yKeys={["learned", "reviewed"]}
-                  domainPadding={{ top: 20, bottom: 20 }}
+                  domainPadding={{ top: 20, bottom: 20, left: 20, right: 20 }}
                   font={font}
                   axisOptions={{
                     font,
